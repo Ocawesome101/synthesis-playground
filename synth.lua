@@ -2,6 +2,7 @@
 -- uses moonal and midialsa
 
 local alsa = require("midialsa")
+local al = require("moonal")
 local A4=440
 
 local function freq(note)
@@ -10,7 +11,25 @@ end
 
 alsa.start()
 local _ = alsa.client("LuaSynthesizer", 1, 1, true)
-local cn2name = alsa.listclients()
-for i=1, #cn2name do print(cn2name[i]) end
-if #cn2name == 0 then error("no midi clients found", 0) end
-assert()
+assert(alsa.connectfrom(0, alsa.parse_address(...)))
+
+local held = {}
+
+local function doSynth()
+  local buffer = {}
+  for note in pairs(held) do
+  end
+end
+
+while true do
+  doSynth()
+  local evt = alsa.input()
+  if evt[1] == alsa.SND_SEQ_EVENT_NOTEON then
+    local pitch = evt[8][2]
+    held[pitch] = true
+
+  elseif evt[1] == alsa.SND_SEQ_EVENT_NOTEOFF then
+    local pitch = evt[8][2]
+    held[pitch] = false
+  end
+end
