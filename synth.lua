@@ -14,7 +14,7 @@ local held = {}
 local wfSine = {}
 
 for i=1, 32 do
-  wfSine[#wfSine+1] = math.sin(math.pi*i/16) * 120
+  wfSine[#wfSine+1] = math.sin(math.pi*i/16) * 30000
 end
 
 local SAMPLE_MIN = -32768
@@ -66,40 +66,63 @@ local context = al.create_context(device)
 
 local sources = {}
 local buffers = {}
+local notes = {}
 
 local function doSynth()
   local sourceIndex = 0
-  for note in pairs(held) do
+  for _, note in pairs(held) do
     sourceIndex = sourceIndex + 1
-    local source, buffer
-    if not sources[sourceIndex] then
+    if notes[sourceIndex] ~= note then
+      notes[sourceIndex] = note
+      local source, buffer = sources[sourceIndex], buffers[sourceIndex]
+      if sources[sourceIndex] then
+        source:stop()
+        source:delete()
+      end
       source = al.create_source(context)
       sources[sourceIndex] = source
       source:set("looping", true)
+      --if buffers[sourceIndex] then
+      --  source:unqueue_buffers(1)
+      --  buffers[sourceIndex]:delete()
+      --end
+      buffer = al.create_buffer(context)
+      buffers[sourceIndex] = buffer
+      buffer:data('mono16', wavAtHz(wfSine, freq(note), 1), SAMPLE_RATE)
+      source:queue_buffers({buffer})
+      source:play()
     end
-    if buffers[bufferIndex] then
-      buffers[bufferIndex]:destroy()
-    end
-    buffer = al.create_buffer(context)
-    buffers[bufferIndex] = buffer
-    buffer:data(wavAtHz(wfSine, freq(note), 1))
   end
   for i=sourceIndex+1, #sources do
+    notes[i] = nil
     sources[i]:stop()
+    sources[i]:delete()
+    sources[i] = nil
+  end
+end
+
+local function addHeld(pitch)
+  for i=1, #held do
+    if held[i] == pitch then return end
+  end
+  held[#held+1] = pitch
+end
+
+local function removeHeld(pitch)
+  for i=1, #held do
+    if held[i] == pitch then return table.remove(held, i) end
   end
 end
 
 while true do
   doSynth()
- -- if alsa.inputpending() > 0 then
-    local evt = alsa.input()
-    if evt[1] == alsa.SND_SEQ_EVENT_NOTEON then
-      local pitch = evt[8][2]
-      held[pitch] = true
+  local evt = alsa.input()
+  if evt[1] == alsa.SND_SEQ_EVENT_NOTEON then
+    local pitch = evt[8][2]
+    addHeld(pitch)
 
-    elseif evt[1] == alsa.SND_SEQ_EVENT_NOTEOFF then
-      local pitch = evt[8][2]
-      held[pitch] = false
-    end
- -- end
+  elseif evt[1] == alsa.SND_SEQ_EVENT_NOTEOFF then
+    local pitch = evt[8][2]
+    removeHeld(pitch)
+  end
 end
