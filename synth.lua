@@ -140,16 +140,21 @@ local function doSynth()
   end
 end
 
+local sustain
 local function addHeld(pitch, velocity)
   for i=1, #held do
-    if held[i][1] == pitch then return end
+    if held[i][1] == pitch then held[i][4] = false return end
   end
-  held[#held+1] = {pitch, velocity/128}
+  held[#held+1] = {pitch, velocity/128, sustain}
 end
 
 local function removeHeld(pitch)
   for i=1, #held do
-    if held[i][1] == pitch then return table.remove(held, i) end
+    if held[i][1] == pitch then
+      held[i][4] = true
+      if not held[i][3] then table.remove(held, i) end
+      return
+    end
   end
 end
 
@@ -163,5 +168,25 @@ while true do
   elseif evt[1] == alsa.SND_SEQ_EVENT_NOTEOFF then
     local pitch = evt[8][2]
     removeHeld(pitch)
+  elseif evt[1] == alsa.SND_SEQ_EVENT_CONTROLLER then
+    if evt[8][6] > 0 then
+      sustain = true
+      for i=1, #held do
+        held[i][3] = true
+      end
+    else
+      sustain = false
+      local ioff = 0
+      for i=1, #held do
+        i = i + ioff
+        if held[i] then
+          held[i][3] = false
+          if held[i][4] then
+            ioff = ioff - 1
+            table.remove(held, i)
+          end
+        end
+      end
+    end
   end
 end
