@@ -41,12 +41,50 @@ local function wavAtHz(waveform, hz, amp)
       floor(((waveform[iAft]or 0) + diff*(iReal-iFore)) * amp)))
   end
 
+  return buffer
+end
+
+local generators = {
+  sine = function(cur, max)
+    local abs = cur/max * 2 * math.pi
+    return math.sin(abs) / (math.pi/2) * (SAMPLE_MAX-4)
+  end
+  square = function(cur, max)
+    return (cur*2 >= max and SAMPLE_MAX or SAMPLE_MIN)
+  end,
+  saw = function(cur, max)
+    return (cur*2 >= max and cur/max*SAMPLE_MAX or SAMPLE_MIN)
+  end,
+  triangle = function(cur, max)
+    local period = max/4
+    if cur < period then
+      return cur/max*SAMPLE_MAX
+    elseif cur < period*3 then
+      return (cur-period)/max*SAMPLE_MAX*2-SAMPLE_MIN-1
+    else
+      return SAMPLE_MIN+(cur-period*3)/max*SAMPLE_MAX
+    end
+  end
+}
+
+local function genWavHz(generator, hz, amp)
+  local buffer = {}
+
+  local samples = SAMPLE_RATE/hz
+  for i=0, samples do
+    buffer[i] = math.floor(generator(i, samples) + 0.5)
+  end
+
+  return buffer
+end
+
+local function getPCM(thing, hz, amp)
+  local buffer = genWavHz(generators.triangle, hz, amp)
   local s = ""
   for i=1, #buffer do
     s = s .. string.pack("<i2", buffer[i])
   end
   return s
-  --return buffer
 end
 
 local function merge(m)
@@ -88,7 +126,7 @@ local function doSynth()
       --end
       buffer = al.create_buffer(context)
       buffers[sourceIndex] = buffer
-      buffer:data('mono16', wavAtHz(wfSine, freq(note), 1), SAMPLE_RATE)
+      buffer:data('mono16', getPCM(wfSine, freq(note), 1), SAMPLE_RATE)
       source:queue_buffers({buffer})
       source:play()
     end
