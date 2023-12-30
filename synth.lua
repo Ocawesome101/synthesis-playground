@@ -108,8 +108,9 @@ local notes = {}
 
 local function doSynth()
   local sourceIndex = 0
-  for _, note in pairs(held) do
+  for _, _note in pairs(held) do
     sourceIndex = sourceIndex + 1
+    local note = _note[1]
     if notes[sourceIndex] ~= note then
       notes[sourceIndex] = note
       local source, buffer = sources[sourceIndex], buffers[sourceIndex]
@@ -126,7 +127,7 @@ local function doSynth()
       --end
       buffer = al.create_buffer(context)
       buffers[sourceIndex] = buffer
-      buffer:data('mono16', getPCM(freq(note), 1, 1), SAMPLE_RATE)
+      buffer:data('mono16', getPCM(freq(note), _note[2], 1), SAMPLE_RATE)
       source:queue_buffers({buffer})
       source:play()
     end
@@ -139,16 +140,16 @@ local function doSynth()
   end
 end
 
-local function addHeld(pitch)
+local function addHeld(pitch, velocity)
   for i=1, #held do
-    if held[i] == pitch then return end
+    if held[i][1] == pitch then return end
   end
-  held[#held+1] = pitch
+  held[#held+1] = {pitch, velocity/128}
 end
 
 local function removeHeld(pitch)
   for i=1, #held do
-    if held[i] == pitch then return table.remove(held, i) end
+    if held[i][1] == pitch then return table.remove(held, i) end
   end
 end
 
@@ -157,7 +158,7 @@ while true do
   local evt = alsa.input()
   if evt[1] == alsa.SND_SEQ_EVENT_NOTEON then
     local pitch = evt[8][2]
-    addHeld(pitch)
+    addHeld(pitch, evt[8][3])
 
   elseif evt[1] == alsa.SND_SEQ_EVENT_NOTEOFF then
     local pitch = evt[8][2]
