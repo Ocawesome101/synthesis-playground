@@ -48,7 +48,7 @@ local generators = {
   sine = function(cur, max)
     local abs = cur/max * 2 * math.pi
     return math.sin(abs) / (math.pi/2) * (SAMPLE_MAX-4)
-  end
+  end,
   square = function(cur, max)
     return (cur*2 >= max and SAMPLE_MAX or SAMPLE_MIN)
   end,
