@@ -11,10 +11,10 @@ assert(alsa.connectfrom(0, alsa.parse_address(assert(..., "need midi device"))),
 
 local held = {}
 
-local wfSine = {}
+local wave = {}
 
-for i=1, 32 do
-  wfSine[#wfSine+1] = math.sin(math.pi*i/16) * 30000
+for line in io.lines("waves/"..(arg[2] or "sine")..".txt") do
+  wave[#wave+1] = tonumber(line)
 end
 
 local SAMPLE_MIN = -32768
@@ -79,7 +79,7 @@ local function genWavHz(generator, hz, amp, count)
 end
 
 local function getPCM(hz, amp, duration)
-  local buffer = wavAtHz(wfSine, hz, amp, duration)
+  local buffer = wavAtHz(wave, hz, amp, duration)
   local s = ""
   for i=1, #buffer do
     s = s .. string.pack("<i2", buffer[i])
