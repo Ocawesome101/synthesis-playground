@@ -45,7 +45,7 @@ end
 function mod.sampledPCM(waveform, hz, amp)
   local buffer = {}
 
-  local separation = mod.SAMPLE_RATE/#waveform/hz
+  local separation = snd.SAMPLE_RATE/#waveform/hz
   for i=1, #waveform*separation do
     local iReal = i/separation%#waveform
     local iFore, iAft = floor(iReal-1), ceil(iReal)
@@ -67,21 +67,15 @@ end
 function mod.generatePCM(generator, hz, amp)
   local buffer = {}
 
-  local samples = SAMPLE_RATE/hz
+  local samples = snd.SAMPLE_RATE/hz
   for i=0, samples do
-    buffer[i+1] = math.floor(generator(i, samples) * mod.SAMPLE_MAX * amp + 0.5)
+    buffer[i+1] = math.floor(generator(i, samples) * snd.SAMPLE_MAX * amp + 0.5)
   end
 
   return buffer
 end
 
-function mod.getPCMString(hz, amp, duration)
-  local buffer
-  if generate then
-    buffer = genWavHz(generators[wave], hz, amp, duration)
-  else
-    buffer = wavAtHz(wave, hz, amp, duration)
-  end
+function mod.getPCMString(buffer)
   local s = ""
   for i=1, #buffer do
     s = s .. string.pack("<i2", buffer[i])
