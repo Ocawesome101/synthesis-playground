@@ -22,10 +22,14 @@ local percussion = {
   -- cymbal
   waves.getPCMString(waves.generatePCMPulse(noise.noiseGenerator(), 7000, 1, 0.1, 0.2, 1.5)),
   -- hi-hat (closed)
-  waves.getPCMString(waves.generatePCMPulse(noise.noiseGenerator(), 8000, 0.5, 0.1, 0.1, 1.7)),
+  waves.getPCMString(waves.generatePCMPulse(noise.noiseGenerator(), 9000, 0.5, 0.1, 0.1, 1.7)),
   -- hi-hat (open)
-  waves.getPCMString(waves.generatePCMPulse(noise.noiseGenerator(), 8000, 0.7, 0.1, 0.3, 1.8)),
+  waves.getPCMString(waves.generatePCMPulse(noise.noiseGenerator(), 9000, 0.7, 0.1, 0.2, 1.8)),
 }
+
+local fancy = function(a, b)
+  return waves.avg(waves.generators.sine(a,b),waves.generators.saw(a,b),waves.generators.square(a,b))
+end
 
 local sustain
 local held = {}
@@ -40,7 +44,7 @@ while true do
     if percussion[pitch - 20] then
       snd.startNote(pitch, velocity, percussion[pitch - 20])
     else
-      snd.startLoop(pitch, velocity, waves.getPCMString(waves.generatePCM(waves.generators.square, snd.freq(pitch), amp)))
+      snd.startLoop(pitch, velocity, waves.getPCMString(waves.generatePCM(fancy, snd.freq(pitch), amp)))
     end
 
   elseif evt[1] == alsa.SND_SEQ_EVENT_NOTEOFF then

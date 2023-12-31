@@ -45,7 +45,7 @@ end
 function mod.sampledPCM(waveform, hz, amp)
   local buffer = {}
 
-  local separation = snd.SAMPLE_RATE/#waveform/hz
+  local separation = math.floor(snd.SAMPLE_RATE/#waveform/hz+0.5)
   for i=1, #waveform*separation do
     local iReal = i/separation%#waveform
     local iFore, iAft = floor(iReal-1), ceil(iReal)
@@ -78,7 +78,7 @@ end
 function mod.generatePCMPulse(generator, hz, ampStart, ampEnd, duration, linearity)
   linearity = linearity or 1
   local buffer = {}
-  local samplesPerOscillation = snd.SAMPLE_RATE/hz
+  local samplesPerOscillation = math.floor(snd.SAMPLE_RATE/hz+0.5)
   local totalSamples = snd.SAMPLE_RATE*duration - (snd.SAMPLE_RATE*duration % samplesPerOscillation)
 
   for i=0, totalSamples do
