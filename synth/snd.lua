@@ -98,7 +98,6 @@ function mod.startNote(note, velocity, pcm, channel, loop)
       if s.velocity == velocity then
         return true
       else
-        print(velocity)
         stopSource(s)
         break
       end

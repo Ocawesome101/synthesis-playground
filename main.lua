@@ -18,7 +18,7 @@ while true do
   if evt[1] == alsa.SND_SEQ_EVENT_NOTEON then
     local pitch = evt[8][2]
     held[pitch] = true
-    local velocity = evt[8][2]
+    local velocity = evt[8][3]
     local amp = velocity/128
 
     snd.startLoop(pitch, velocity, waves.getPCMString(waves.generatePCM(waves.generators.sine, snd.freq(pitch), amp)))
