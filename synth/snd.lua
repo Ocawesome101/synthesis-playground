@@ -32,7 +32,7 @@ local sources = {}
 function mod.checkSourceBuffers()
   for i=1, #sources do
     local s = sources[i]
-    if (not s.loop) and (not s.available) then
+    if (not s.active or not s.loop) and (not s.available) then
       local buf = s.source:unqueue_buffers(1)
       if buf then
         s.buffer:destroy()
@@ -88,6 +88,7 @@ function mod.stopLoop(note, channel)
 end
 
 function mod.addNote(note, velocity, pcm, channel, loop)
+  mod.checkSourceBuffers()
   channel = channel or 0
   for i=1, #sources do
     local s = sources[i]
@@ -102,39 +103,6 @@ function mod.addNote(note, velocity, pcm, channel, loop)
     end
   end
   sources[#sources+1] = newSource(note, velocity, pcm, channel, loop)
-end
-
-local function doSynth()
-  local sourceIndex = 0
-  for _, _note in pairs(held) do
-    sourceIndex = sourceIndex + 1
-    local note = _note[1]
-    local velocity = _note[2]
-    if notes[sourceIndex] ~= note or velocities[sourceIndex] ~= velocity then
-      notes[sourceIndex] = note
-      velocities[sourceIndex] = velocity
-      local source, buffer = sources[sourceIndex], buffers[sourceIndex]
-      if sources[sourceIndex] then
-        source:stop()
-        source:delete()
-      end
-      source = al.create_source(context)
-      sources[sourceIndex] = source
-      source:set("looping", true)
-
-      buffer = al.create_buffer(context)
-      buffers[sourceIndex] = buffer
-      buffer:data('mono16', getPCM(freq(note), _note[2], 1), mod.SAMPLE_RATE)
-      source:queue_buffers({buffer})
-      source:play()
-    end
-  end
-  for i=sourceIndex+1, #sources do
-    notes[i] = nil
-    sources[i]:stop()
-    sources[i]:delete()
-    sources[i] = nil
-  end
 end
 
 return mod
