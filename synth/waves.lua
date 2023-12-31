@@ -37,7 +37,7 @@ local floor, ceil = math.floor, math.ceil
 function mod.generateSampledWave(generator, sampleCount)
   local samples = {}
   for i=1, sampleCount do
-    samples[i] = generator(i/sampleCount)
+    samples[i] = generator(i, sampleCount)
   end
   return samples
 end
@@ -50,7 +50,7 @@ function mod.sampledPCM(waveform, hz, amp)
     local iReal = i/separation%#waveform
     local iFore, iAft = floor(iReal-1), ceil(iReal)
     local diff = (waveform[iAft] or 0) - (waveform[iFore] or 0)
-    buffer[i] = math.max(SAMPLE_MIN,math.min(SAMPLE_MAX,
+    buffer[i] = math.max(snd.SAMPLE_MIN,math.min(snd.SAMPLE_MAX,
       floor(((waveform[iAft]or 0) + diff*(iReal-iFore)) * amp)))
   end
 
@@ -70,6 +70,21 @@ function mod.generatePCM(generator, hz, amp)
   local samples = snd.SAMPLE_RATE/hz
   for i=0, samples do
     buffer[i+1] = math.floor(generator(i, samples) * snd.SAMPLE_MAX * amp + 0.5)
+  end
+
+  return buffer
+end
+
+function mod.generatePCMPulse(generator, hz, ampStart, ampEnd, duration, linearity)
+  linearity = linearity or 1
+  local buffer = {}
+  local samplesPerOscillation = snd.SAMPLE_RATE/hz
+  local totalSamples = snd.SAMPLE_RATE*duration - (snd.SAMPLE_RATE*duration % samplesPerOscillation)
+
+  for i=0, totalSamples do
+    local current = i % samplesPerOscillation
+    local amp = ampStart+(ampEnd-ampStart)*(i/totalSamples)^linearity
+    buffer[#buffer+1] = math.floor(generator(current, samplesPerOscillation) * snd.SAMPLE_MAX * amp + 0.5)
   end
 
   return buffer

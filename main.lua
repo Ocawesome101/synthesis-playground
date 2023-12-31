@@ -11,6 +11,21 @@ assert(alsa.connectfrom(0, alsa.parse_address(assert((...), "need midi device"))
 
 -- for 88-key piano: min pitch is 21 max is 100
 
+local noise = waves.generatePCMPulse(
+  function()return math.random(snd.SAMPLE_MIN,snd.SAMPLE_MAX)/snd.SAMPLE_MAX end,
+  10, 1, 0.1, 0.3, 1.4)
+--[[
+local I=1
+repeat
+  local samples = waves.generateSampledWave(
+  ,32)
+  local buf = waves.sampledPCM(samples, 10, 1/I)
+  for i=1, #buf do noise[#noise+1] = buf[i] end
+  print(I)
+  I=I+1
+until #noise >= snd.SAMPLE_RATE/2]]
+noise = waves.getPCMString(noise)
+
 local sustain
 local held = {}
 while true do
@@ -21,7 +36,11 @@ while true do
     local velocity = evt[8][3]
     local amp = velocity/128
 
-    snd.startLoop(pitch, velocity, waves.getPCMString(waves.generatePCM(waves.generators.sine, snd.freq(pitch), amp)))
+    if pitch == 21 then
+      snd.startNote(pitch, velocity, noise)
+    else
+      snd.startLoop(pitch, velocity, waves.getPCMString(waves.generatePCM(waves.generators.square, snd.freq(pitch), amp)))
+    end
 
   elseif evt[1] == alsa.SND_SEQ_EVENT_NOTEOFF then
     local pitch = evt[8][2]
