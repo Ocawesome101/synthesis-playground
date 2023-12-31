@@ -32,7 +32,7 @@ local sources = {}
 function mod.checkSourceBuffers()
   for i=1, #sources do
     local s = sources[i]
-    if not s.active then
+    if (not s.loop) and (not s.available) then
       local buf = s.source:unqueue_buffers(1)
       if buf then
         s.buffer:destroy()
@@ -49,10 +49,27 @@ local function stopSource(s)
   s.available = false
 end
 
-local function writeSource()
+local function writeSource(s, note, velocity, pcm, channel, loop)
+  s.note = note
+  s.velocity = velocity
+  s.channel = channel
+  s.loop = not not loop
+
+  s.buffer = al.create_buffer(context)
+  s.buffer:data('mono16', pcm, mod.SAMPLE_RATE)
+  s.source:queue_buffers({s.buffer})
+  s.source:set("looping", not not loop)
+  s.source:play()
+  s.active = true
+  s.available = false
 end
 
-local function newSource()
+local function newSource(note, velocity, pcm, channel, loop)
+  local s = {
+    source = al.create_source(context)
+  }
+  writeSource(s, note, velocity, pcm, channel, loop)
+  return s
 end
 
 function mod.startLoop(note, velocity, pcm, channel)
