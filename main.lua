@@ -45,13 +45,15 @@ local sustain
 local inLoop = false
 local held = {}
 
+local generator = fancy--waves.generators.square
+
 local function begin(pitch, velocity, channel)
   local amp = velocity/128
 
   if samples[pitch - 20] then
     snd.startNote(pitch, velocity, samples[pitch - 20], channel)
   else
-    snd.startLoop(pitch, velocity, waves.getPCMString(waves.generatePCM(fancy, snd.freq(pitch), amp)), channel)
+    snd.startLoop(pitch, velocity, waves.getPCMString(waves.generatePCM(generator, snd.freq(pitch), amp)), channel)
   end
 end
 
