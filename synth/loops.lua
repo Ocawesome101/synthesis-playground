@@ -67,7 +67,8 @@ function mod.endLoop()
     last.duration = mod.getTime() - last.start
     if last.duration == 0 then loop[#loop] = nil end
   end
-  return true
+
+  return #loops
 end
 
 function mod.playLoop(id)
@@ -81,7 +82,7 @@ function mod.stopLoop(id)
 end
 
 function mod.nextFrame()
-  local frames = {}
+  local frames, timeToNext = {}, math.huge
   for i=1, #loops do
     local loop = loops[i]
     if loop.playing then
@@ -90,6 +91,7 @@ function mod.nextFrame()
       for n=1, index-1 do
         totalTime = totalTime + loop[n].duration
       end
+      timeToNext = math.min(timeToNext, mod.getTime() - (loop[index].duration + totalTime))
       if mod.getTime() >= loop[index].duration + totalTime then
         if index == #loop then loop.startTime = mod.getTime() loop.index = 0 end
         loop.index = loop.index + 1
@@ -97,7 +99,7 @@ function mod.nextFrame()
       end
     end
   end
-  return frames
+  return frames, timeToNext
 end
 
 return mod
