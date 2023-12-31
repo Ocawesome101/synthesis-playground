@@ -8,7 +8,7 @@ local loops = {}
 
 function mod.getTime()
   local spec = time.clock_gettime(time.CLOCK_REALTIME)
-  return spec.tv_sec*1000 + spec.tv_nsec/1000000
+  return math.floor(spec.tv_sec*1000 + spec.tv_nsec/1000000)
 end
 
 function mod.startLoop(channel)
@@ -24,15 +24,17 @@ function mod.startNote(pitch, velocity)
     if last.duration == 0 then loop[#loop] = nil end
   end
   local pitches, velocities = {}, {}
-  local current = {pitches=pitches, velocities=velocities, start = mod.getTime()}
+  local current = {pitches=pitches, velocities=velocities, start = mod.getTime(), channel = loop.channel}
   local overwrite
-  for i=1, #last.pitches do pitches[i] = last.pitches[i] if pitches[i] == pitch then overwrite = i end end
-  for i=1, #last.velocities do velocities[i] = last.velocities[i] end
+  if last then
+    for i=1, #last.pitches do pitches[i] = last.pitches[i] if pitches[i] == pitch then overwrite = i end end
+    for i=1, #last.velocities do velocities[i] = last.velocities[i] end
+  end
   if overwrite then
     velocities[overwrite] = velocity
   else
     pitches[#pitches+1] = pitch
-    velocites[#velocities+1] = velocity
+    velocities[#velocities+1] = velocity
   end
   loop[#loop+1] = current
 end
@@ -40,8 +42,8 @@ end
 function mod.endNote(pitch)
   local loop = loops[#loops]
   local last = loop[#loop]
-  local pitches, velocities = {}
-  local current = {pitches=pitches, velocities=velocities, start = mod.getTime()}
+  local pitches, velocities = {}, {}
+  local current = {pitches=pitches, velocities=velocities, start = mod.getTime(), channel = loop.channel}
   for i=1, #last.pitches do
     if last.pitches[i] ~= pitch then
       pitches[#pitches+1] = last.pitches[i]
@@ -68,12 +70,16 @@ function mod.endLoop()
     if last.duration == 0 then loop[#loop] = nil end
   end
 
+  for i=1, #loop do
+    print(loop[i].duration)
+  end
+
   return #loops
 end
 
 function mod.playLoop(id)
   loops[id].playing = true
-  loops[id].startTime = mod.getTime()
+  loops[id].nextTime = mod.getTime() - loops[id][1].duration
   loops[id].index = 1
 end
 
@@ -87,16 +93,13 @@ function mod.nextFrame()
     local loop = loops[i]
     if loop.playing then
       local index = loop.index
-      local totalTime = 0
-      for n=1, index-1 do
-        totalTime = totalTime + loop[n].duration
-      end
-      timeToNext = math.min(timeToNext, mod.getTime() - (loop[index].duration + totalTime))
-      if mod.getTime() >= loop[index].duration + totalTime then
-        if index == #loop then loop.startTime = mod.getTime() loop.index = 0 end
+      if mod.getTime() >= loop.nextTime then
         loop.index = loop.index + 1
+        if loop.index > #loop then loop.index = 1 end
+        loop.nextTime = mod.getTime() + loop[loop.index].duration
         frames[#frames+1] = loop[index]
       end
+      timeToNext = math.min(timeToNext, loop.nextTime - mod.getTime())
     end
   end
   return frames, timeToNext

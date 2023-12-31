@@ -33,7 +33,7 @@ local samples = {
 local fancy = function(a, b)
   return waves.abs(waves.phaseshift(waves.generators.sine, 0.3)(a,b), waves.generators.sine(a,b))
 end
---[[
+-- [[
 print'generating samples'
 for i=#samples+1, 88 do
   print(i)
@@ -56,6 +56,7 @@ local function begin(pitch, velocity, channel)
 end
 
 local channel = 0
+local loopRunning = {}
 while true do
   if alsa.inputpending() > 0 then
     local evt = alsa.input()
@@ -110,7 +111,10 @@ while true do
       local running = {}
       for i=1, #frame.pitches do
         running[frame.pitches[i]] = true
-        begin(frame.pitches[i], frame.velocities[i], frame.channel)
+        if loopRunning[frame.pitches[i]] ~= frame.velocities[i] then
+          loopRunning[frame.pitches[i]] = frame.velocities[i]
+          begin(frame.pitches[i], frame.velocities[i], frame.channel)
+        end
       end
       for i=0, 255 do
         if not running[i] then
@@ -121,6 +125,6 @@ while true do
   end
   local absoluteTimeToNext = loops.getTime() + timeToNext
   repeat
-    time.nanosleep(math.min(timeToNext, 16)*1000000)
+    time.nanosleep({tv_sec=0,tv_nsec=math.min(timeToNext, 16)*1000000})
   until alsa.inputpending() > 0 or loops.getTime() >= absoluteTimeToNext
 end
