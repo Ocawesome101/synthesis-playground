@@ -12,9 +12,15 @@ assert(alsa.connectfrom(0, alsa.parse_address(assert(..., "need midi device"))),
 local held = {}
 
 local wave = {}
+local generate = false
 
-for line in io.lines("waves/"..(arg[2] or "sine")..".txt") do
-  wave[#wave+1] = tonumber(line)
+if arg[2] == "gen" then
+  generate = true
+  wave = arg[3] or "sine"
+else
+  for line in io.lines("waves/"..(arg[2] or "sine")..".txt") do
+    wave[#wave+1] = tonumber(line)
+  end
 end
 
 local SAMPLE_MIN = -32768
@@ -71,7 +77,7 @@ local function genWavHz(generator, hz, amp, count)
   local samples = SAMPLE_RATE/hz
   for d=0, count-1 do
     for i=0, samples do
-      buffer[i+d*samples+1] = math.floor(generator(i, samples) + 0.5)
+      buffer[i+d*samples+1] = math.floor(generator(i, samples) * amp + 0.5)
     end
   end
 
@@ -79,7 +85,12 @@ local function genWavHz(generator, hz, amp, count)
 end
 
 local function getPCM(hz, amp, duration)
-  local buffer = wavAtHz(wave, hz, amp, duration)
+  local buffer
+  if generate then
+    buffer = genWavHz(generators[wave], hz, amp, duration)
+  else
+    buffer = wavAtHz(wave, hz, amp, duration)
+  end
   local s = ""
   for i=1, #buffer do
     s = s .. string.pack("<i2", buffer[i])
@@ -105,14 +116,17 @@ local context = al.create_context(device)
 local sources = {}
 local buffers = {}
 local notes = {}
+local velocities = {}
 
 local function doSynth()
   local sourceIndex = 0
   for _, _note in pairs(held) do
     sourceIndex = sourceIndex + 1
     local note = _note[1]
-    if notes[sourceIndex] ~= note then
+    local velocity = _note[2]
+    if notes[sourceIndex] ~= note or velocities[sourceIndex] ~= velocity then
       notes[sourceIndex] = note
+      velocities[sourceIndex] = velocity
       local source, buffer = sources[sourceIndex], buffers[sourceIndex]
       if sources[sourceIndex] then
         source:stop()
@@ -121,10 +135,7 @@ local function doSynth()
       source = al.create_source(context)
       sources[sourceIndex] = source
       source:set("looping", true)
-      --if buffers[sourceIndex] then
-      --  source:unqueue_buffers(1)
-      --  buffers[sourceIndex]:delete()
-      --end
+
       buffer = al.create_buffer(context)
       buffers[sourceIndex] = buffer
       buffer:data('mono16', getPCM(freq(note), _note[2], 1), SAMPLE_RATE)
@@ -143,7 +154,7 @@ end
 local sustain
 local function addHeld(pitch, velocity)
   for i=1, #held do
-    if held[i][1] == pitch then held[i][4] = false return end
+    if held[i][1] == pitch then held[i][2] = velocity/128 held[i][4] = false return end
   end
   held[#held+1] = {pitch, velocity/128, sustain}
 end
@@ -169,7 +180,7 @@ while true do
     local pitch = evt[8][2]
     removeHeld(pitch)
   elseif evt[1] == alsa.SND_SEQ_EVENT_CONTROLLER then
-    if evt[8][6] > 0 then
+    if evt[8][6] > 63 then
       sustain = true
       for i=1, #held do
         held[i][3] = true
