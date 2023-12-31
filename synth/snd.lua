@@ -48,6 +48,7 @@ end
 local function stopSource(s)
   s.source:set("looping", false)
   s.active = false
+  if not s.loop then s.source:stop() end
 end
 
 local function writeSource(s, note, velocity, pcm, channel, loop)

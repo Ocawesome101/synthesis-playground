@@ -12,7 +12,8 @@ assert(alsa.connectfrom(0, alsa.parse_address(assert((...), "need midi device"))
 
 -- for 88-key piano: min pitch is 21 max is 100
 
-local percussion = {
+local samples = {
+  -- drums
   -- kick
   waves.getPCMString(waves.generatePCMPulse(noise.noiseGenerator(), 220, 1, 0.1, 0.3, 1.3)),
   -- snare?
@@ -28,10 +29,19 @@ local percussion = {
 }
 
 local fancy = function(a, b)
-  return waves.avg(waves.generators.sine(a,b),waves.generators.saw(a,b),waves.generators.square(a,b))
+  return math.max(waves.generators.triangle(a,b),
+    waves.avg(waves.generators.sine(a,b),waves.generators.saw(a,b),waves.generators.square(a,b)))
 end
+--[[
+print'generating samples'
+for i=#samples+1, 88 do
+  print(i)
+  samples[i] = waves.getPCMString(waves.generatePCMPulse(fancy, snd.freq(i+20), 1, 0.1, 1, 0.5))
+end
+print'done']]
 
 local sustain
+local channel = 1
 local held = {}
 while true do
   local evt = alsa.input()
@@ -41,17 +51,17 @@ while true do
     local velocity = evt[8][3]
     local amp = velocity/128
 
-    if percussion[pitch - 20] then
-      snd.startNote(pitch, velocity, percussion[pitch - 20])
+    if samples[pitch - 20] then
+      snd.startNote(pitch, velocity, samples[pitch - 20], channel)
     else
-      snd.startLoop(pitch, velocity, waves.getPCMString(waves.generatePCM(fancy, snd.freq(pitch), amp)))
+      snd.startLoop(pitch, velocity, waves.getPCMString(waves.generatePCM(waves.generators.square, snd.freq(pitch), amp)), channel)
     end
 
   elseif evt[1] == alsa.SND_SEQ_EVENT_NOTEOFF then
     local pitch = evt[8][2]
     held[pitch] = false
     if not sustain then
-      snd.stopLoop(pitch, -1)
+      snd.stopLoop(pitch, channel)
     end
 
   elseif evt[1] == alsa.SND_SEQ_EVENT_CONTROLLER then

@@ -83,7 +83,7 @@ function mod.generatePCMPulse(generator, hz, ampStart, ampEnd, duration, lineari
 
   for i=0, totalSamples do
     local current = i % samplesPerOscillation
-    local amp = ampStart+(ampEnd-ampStart)*(i/totalSamples)^linearity
+    local amp = ampStart+(ampEnd-ampStart)*((i/totalSamples)^linearity)
     buffer[#buffer+1] = math.floor(math.max(-1, math.min(1,generator(current, samplesPerOscillation))) * snd.SAMPLE_MAX * amp + 0.5)
   end
 
@@ -91,11 +91,12 @@ function mod.generatePCMPulse(generator, hz, ampStart, ampEnd, duration, lineari
 end
 
 function mod.getPCMString(buffer)
-  local s = ""
+  local b = {}
   for i=1, #buffer do
-    s = s .. string.pack("<i2", buffer[i])
+    b[#b+1] = string.char(buffer[i]&0xFF)
+    b[#b+1] = string.char((buffer[i]&0xFF00) >> 8)
   end
-  return s
+  return table.concat(b)
 end
 
 return mod
