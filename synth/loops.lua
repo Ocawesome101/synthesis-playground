@@ -41,6 +41,7 @@ end
 function mod.endNote(pitch)
   local loop = loops[#loops]
   local last = loop[#loop]
+  if not last then return end
   local pitches, velocities = {}, {}
   local current = {pitches=pitches, velocities=velocities, start = mod.getTime(), channel = loop.channel}
   for i=1, #last.pitches do
@@ -68,6 +69,10 @@ function mod.endLoop()
   end
 
   return #loops
+end
+
+function mod.getChannel(id)
+  return loops[id].channel
 end
 
 function mod.playLoop(id)

@@ -57,6 +57,7 @@ end
 
 local channel = 0
 local loopRunning = {}
+local loopStack = {}
 while true do
   if alsa.inputpending() > 0 then
     local evt = alsa.input()
@@ -90,7 +91,17 @@ while true do
         else
           inLoop = false
           local id = loops.endLoop()
-          if id then loops.playLoop(id) end
+          if id then
+            loops.playLoop(id)
+            loopStack[#loopStack+1] = id
+          elseif #loopStack > 0 then
+            local channel = loops.getChannel(loopStack[#loopStack])
+            for note in pairs(loopRunning[channel]) do
+              loopRunning[channel][note] = false
+              snd.stopLoop(note, channel)
+            end
+            loops.stopLoop(table.remove(loopStack, #loopStack))
+          end
         end
       else
         sustain = pressed > 63
@@ -111,14 +122,15 @@ while true do
       local running = {}
       for i=1, #frame.pitches do
         running[frame.pitches[i]] = true
-        if loopRunning[frame.pitches[i]] ~= frame.velocities[i] then
-          loopRunning[frame.pitches[i]] = frame.velocities[i]
+        loopRunning[frame.channel] = loopRunning[frame.channel] or {}
+        if loopRunning[frame.channel][frame.pitches[i]] ~= frame.velocities[i] then
+          loopRunning[frame.channel][frame.pitches[i]] = frame.velocities[i]
           begin(frame.pitches[i], frame.velocities[i], frame.channel)
         end
       end
       for i=0, 255 do
         if not running[i] then
-          loopRunning[i] = false
+          loopRunning[frame.channel][i] = false
           snd.stopLoop(i, frame.channel)
         end
       end
