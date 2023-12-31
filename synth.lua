@@ -67,8 +67,15 @@ local generators = {
   end,
 }
 
+local function avg(...)
+  local a = {...}
+  local n = 0
+  for i=1, #a do n = n + a[i] end
+  return n/#a
+end
+
 generators.fancy = function(cur, max)
-    return math.max(generators.sine(cur, max), generators.saw(cur, max))
+    return avg(generators.sine(cur, max), generators.saw(cur, max), generators.square(cur, max))
 end
 
 local function genWavHz(generator, hz, amp, count)
