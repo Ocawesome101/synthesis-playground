@@ -21,7 +21,6 @@ function mod.startNote(pitch, velocity)
   local last = loop[#loop]
   if last and not last.duration then
     last.duration = mod.getTime() - last.start
-    if last.duration == 0 then loop[#loop] = nil end
   end
   local pitches, velocities = {}, {}
   local current = {pitches=pitches, velocities=velocities, start = mod.getTime(), channel = loop.channel}
@@ -52,7 +51,6 @@ function mod.endNote(pitch)
   end
   if not last.duration then
     last.duration = mod.getTime() - last.start
-    if last.duration == 0 then loop[#loop] = nil end
   end
   loop[#loop+1] = current
 end
@@ -67,11 +65,6 @@ function mod.endLoop()
   local last = loop[#loop]
   if not last.duration then
     last.duration = mod.getTime() - last.start
-    if last.duration == 0 then loop[#loop] = nil end
-  end
-
-  for i=1, #loop do
-    print(loop[i].duration)
   end
 
   return #loops
@@ -79,7 +72,7 @@ end
 
 function mod.playLoop(id)
   loops[id].playing = true
-  loops[id].nextTime = mod.getTime() - loops[id][1].duration
+  loops[id].nextTime = mod.getTime()
   loops[id].index = 1
 end
 
@@ -96,7 +89,9 @@ function mod.nextFrame()
       if mod.getTime() >= loop.nextTime then
         loop.index = loop.index + 1
         if loop.index > #loop then loop.index = 1 end
-        loop.nextTime = mod.getTime() + loop[loop.index].duration
+        loop.nextTime = mod.getTime() + loop[index].duration
+        loop[index].index = index
+        loop[index].max = #loop
         frames[#frames+1] = loop[index]
       end
       timeToNext = math.min(timeToNext, loop.nextTime - mod.getTime())

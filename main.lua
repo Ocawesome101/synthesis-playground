@@ -33,7 +33,7 @@ local samples = {
 local fancy = function(a, b)
   return waves.abs(waves.phaseshift(waves.generators.sine, 0.3)(a,b), waves.generators.sine(a,b))
 end
--- [[
+--[[
 print'generating samples'
 for i=#samples+1, 88 do
   print(i)
@@ -118,6 +118,7 @@ while true do
       end
       for i=0, 255 do
         if not running[i] then
+          loopRunning[i] = false
           snd.stopLoop(i, frame.channel)
         end
       end
