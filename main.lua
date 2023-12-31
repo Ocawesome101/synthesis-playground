@@ -32,13 +32,13 @@ local fancy = function(a, b)
   return math.max(waves.generators.triangle(a,b),
     waves.avg(waves.generators.sine(a,b),waves.generators.saw(a,b),waves.generators.square(a,b)))
 end
---[[
+
 print'generating samples'
 for i=#samples+1, 88 do
   print(i)
-  samples[i] = waves.getPCMString(waves.generatePCMPulse(fancy, snd.freq(i+20), 1, 0.1, 1, 0.5))
+  samples[i] = waves.getPCMString(waves.generatePCMPulse(waves.generators.square, snd.freq(i+20), 1, 0.1, 1, 0.5))
 end
-print'done']]
+print'done'
 
 local sustain
 local channel = 1
