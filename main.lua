@@ -29,7 +29,7 @@ local samples = {
 }
 
 local fancy = function(a, b)
-  return waves.abs(waves.phaseshift(waves.generators.sine, 0.1)(a,b), waves.generators.sine(a,b))
+  return waves.abs(waves.phaseshift(waves.generators.sine, 0.3)(a,b), waves.generators.sine(a,b))
 end
 --[[
 print'generating samples'
@@ -64,11 +64,15 @@ while true do
     end
 
   elseif evt[1] == alsa.SND_SEQ_EVENT_CONTROLLER then
-    sustain = evt[8][6] > 63
-    if not sustain then
-      for i=0, 255 do
-        if not held[i] then
-          snd.stopLoop(i, -1)
+    if evt[8][5] == 67 then
+      -- TODO: looper control
+    else
+      sustain = evt[8][6] > 63
+      if not sustain then
+        for i=0, 255 do
+          if not held[i] then
+            snd.stopLoop(i, -1)
+          end
         end
       end
     end
