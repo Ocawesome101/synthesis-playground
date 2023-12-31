@@ -18,12 +18,41 @@ mod.generators = {
     return (cur*2 >= max and cur/max or -1)
   end,
   triangle = function(cur, max)
-    local amp = 1
-    return 4*amp/max * math.abs((((cur-max/4)%max)+max)%max - max/2) - amp
+    if cur/max < 0.25 then -- 0 to 0.25
+      return cur/max * 4
+    elseif cur/max < 0.75 then -- 0.25 to 0.75
+      return 1 - (cur/max - 0.25) * 4
+    else
+      return -1 + (cur/max - 0.75) * 4
+    end
   end,
 }
 
+-- wave utility functions
+function mod.phaseshift(generator, shift)
+  return function(cur, max)
+    return generator((cur + (max*shift)) % max, max)
+  end
+end
+
+function mod.avg(...)
+  local a = {...}
+  local n = 0
+  for i=1, #a do n = n + a[i] end
+  return n/#a
+end
+
+function mod.abs(...)
+  local a = {...}
+  local n = 0
+  for i=1, #a do
+    if math.abs(a[i]) > math.abs(n) then n = a[i] end
+  end
+  return n
+end
+
 function mod.loadWave(file)
+  local wave = {}
   for line in io.lines(file) do
     wave[#wave+1] = tonumber(line)
   end
@@ -42,26 +71,20 @@ function mod.generateSampledWave(generator, sampleCount)
   return samples
 end
 
-function mod.sampledPCM(waveform, hz, amp)
+function mod.generateSampledPCM(waveform, hz, amp)
   local buffer = {}
 
-  local separation = math.floor(snd.SAMPLE_RATE/#waveform/hz+0.5)
+  local separation = floor(snd.SAMPLE_RATE/#waveform/hz+0.5)
   for i=1, #waveform*separation do
     local iReal = i/separation%#waveform
-    local iFore, iAft = floor(iReal-1), ceil(iReal)
+    if floor(iReal) == iReal then iReal = iReal + 0.1 end
+    local iFore, iAft = floor(iReal), ceil(iReal)
     local diff = (waveform[iAft] or 0) - (waveform[iFore] or 0)
     buffer[i] = math.max(snd.SAMPLE_MIN,math.min(snd.SAMPLE_MAX,
-      floor(((waveform[iAft]or 0) + diff*(iReal-iFore)) * amp)))
+      floor(((waveform[iAft]or 0) + diff*(iReal-iFore)) * snd.SAMPLE_MAX * amp)))
   end
 
   return buffer
-end
-
-function mod.avg(...)
-  local a = {...}
-  local n = 0
-  for i=1, #a do n = n + a[i] end
-  return n/#a
 end
 
 function mod.generatePCM(generator, hz, amp)
@@ -69,7 +92,7 @@ function mod.generatePCM(generator, hz, amp)
 
   local samples = snd.SAMPLE_RATE/hz
   for i=0, samples do
-    buffer[i+1] = math.floor(generator(i, samples) * snd.SAMPLE_MAX * amp + 0.5)
+    buffer[i+1] = floor(generator(i, samples) * snd.SAMPLE_MAX * amp + 0.5)
   end
 
   return buffer
@@ -78,13 +101,32 @@ end
 function mod.generatePCMPulse(generator, hz, ampStart, ampEnd, duration, linearity)
   linearity = linearity or 1
   local buffer = {}
-  local samplesPerOscillation = math.floor(snd.SAMPLE_RATE/hz+0.5)
+  local samplesPerOscillation = floor(snd.SAMPLE_RATE/hz+0.5)
   local totalSamples = snd.SAMPLE_RATE*duration - (snd.SAMPLE_RATE*duration % samplesPerOscillation)
 
   for i=0, totalSamples do
     local current = i % samplesPerOscillation
     local amp = ampStart+(ampEnd-ampStart)*((i/totalSamples)^linearity)
-    buffer[#buffer+1] = math.floor(math.max(-1, math.min(1,generator(current, samplesPerOscillation))) * snd.SAMPLE_MAX * amp + 0.5)
+    buffer[#buffer+1] = floor(math.max(-1, math.min(1,generator(current, samplesPerOscillation))) * snd.SAMPLE_MAX * amp + 0.5)
+  end
+
+  return buffer
+end
+
+function mod.generateSampledPCMPulse(waveform, hz, ampStart, ampEnd, duration, linearity)
+  linearity = linearity or 1
+  local buffer = {}
+  local samplesPerOscillation = floor(snd.SAMPLE_RATE/hz+0.5)
+  local totalSamples = snd.SAMPLE_RATE*duration - (snd.SAMPLE_RATE*duration % samplesPerOscillation)
+  local separation = floor(snd.SAMPLE_RATE/#waveform/hz+0.5)
+
+  for i=0, totalSamples do
+    local amp = ampStart+(ampEnd-ampStart)*((i/totalSamples)^linearity)
+    local iReal = i/separation%#waveform
+    local iFore, iAft = floor(iReal-1), ceil(iReal)
+    local diff = (waveform[iAft] or 0) - (waveform[iFore] or 0)
+    buffer[#buffer+1] = floor(math.max(snd.SAMPLE_MIN,math.min(snd.SAMPLE_MAX,
+      floor(((waveform[iAft]or 0) + diff*(iReal-iFore)) * amp * snd.SAMPLE_MAX))))
   end
 
   return buffer
