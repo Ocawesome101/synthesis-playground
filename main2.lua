@@ -60,6 +60,8 @@ flasher:show()
 win:done()
 win:show()
 
+fl.set_timeout(0.05, true, function() end)
+
 while fl.wait() do
   if synth.status == "error" then
     local _ = synth[1]
@@ -70,12 +72,13 @@ while fl.wait() do
     local k, v = linda1:receive(0, KEY)
     if k and v[1] == "inLoop" then
       if v[2] then
-        flasher:color(fl.rgb_color(0xCC, 0, 0))
-        flasher:labelcolor(fl.rgb_color(0x44, 0, 0))
+        flasher:color(0xCC000000)
+        flasher:labelcolor(0x44000000)
       else
-        flasher:color(fl.rgb_color(0x44, 0, 0))
-        flasher:labelcolor(fl.rgb_color(0xCC, 0, 0))
+        flasher:color(0x44000000)
+        flasher:labelcolor(0xCC000000)
       end
+      flasher:damage('user2')
     end
   until not k
 end
