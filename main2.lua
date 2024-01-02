@@ -24,7 +24,7 @@ local synth_thread = lanes.gen("*", function()
     local pedal, pressed = e[8][5], e[8][6]
     if pedal == PEDAL_LOOP then
       inLoop = pressed > 63
-      linda1:send(KEY, "inLoop", inLoop)
+      linda1:send(KEY, {"inLoop", inLoop})
     end
   end)
 
@@ -48,8 +48,6 @@ fl.font(fl.COURIER)
 local winw, winh = win:w(), win:h()
 
 local menubar = fl.menu_bar(0, 0, winw, fl.height(), "A")
-
-
 local _x, _y, _w, _h = fl.text_extents("Loop")
 local flasher = fl.box('down box', winw-_w-MARGIN, fl.height(), _w+MARGIN, fl.height(), "Loop")
 flasher:color(0x44000000)
@@ -63,10 +61,15 @@ win:done()
 win:show()
 
 while fl.wait() do
+  if synth.status == "error" then
+    local _ = synth[1]
+    fl.quit()
+    break
+  end
   repeat
-    local k, v, v2 = linda1:receive(0, KEY)
-    if k and v == "inLoop" then
-      if v2 then
+    local k, v = linda1:receive(0, KEY)
+    if k and v[1] == "inLoop" then
+      if v[2] then
         flasher:color(fl.rgb_color(0xCC, 0, 0))
         flasher:labelcolor(fl.rgb_color(0x44, 0, 0))
       else
