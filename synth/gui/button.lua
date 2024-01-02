@@ -5,10 +5,7 @@ local gui = require("synth.gui")
 
 local mod = {}
 
-function mod.new(text, x, y, callback)
-  local w, h = gui.state.font:sizeUtf8(text)
-  local bw, bh = w+gui.MARGIN*2, h+gui.MARGIN*2
-
+local function genButtonStates(text, w, h, bw, bh)
   local states = {}
   local surf = gui.getSurface(bw, bh)
   local ts
@@ -18,7 +15,6 @@ function mod.new(text, x, y, callback)
   ts = gui.state.font:renderUtf8(text, "shaded",
     gui.COLOR_FG_BUTTON_IDLE, gui.COLOR_BG_BUTTON_IDLE)
   ts:blit(surf, nil, {x=gui.MARGIN, y=gui.MARGIN, w=w, h=h})
-
   states.idle = gui.state.rdr:createTextureFromSurface(surf)
   
   -- state 'hover'
@@ -35,13 +31,27 @@ function mod.new(text, x, y, callback)
   ts:blit(surf, nil, {x=gui.MARGIN, y=gui.MARGIN, w=w, h=h})
   states.press = gui.state.rdr:createTextureFromSurface(surf)
 
+  return states
+end
+
+function mod.new(text, x, y, callback, hide)
+  local w, h = gui.state.font:sizeUtf8(text)
+  local bw, bh = w+gui.MARGIN*2, h+gui.MARGIN*2
+
+  local states = genButtonStates(text, w, h, bw, bh)
+  
   local state = "idle"
 
   local b = {w = bw, h = bh, x = x, y = y}
-  gui.addElement(b)
+  if not hide then gui.addElement(b) end
 
   function b.render(s)
-    s.rdr:copy(states[state], nil, {x=b.x, y=b.y, w=bw, h=bh})
+    s.rdr:copy(states[state], nil, {x=b.x, y=b.y, w=b.w, h=b.h})
+  end
+
+  function b.forceSize(nbw, nbh)
+    b.w, b.h = nbw, nbh
+    states = genButtonStates(text, w, h, nbw, nbh)
   end
 
   function b.click(button)
@@ -62,6 +72,10 @@ function mod.new(text, x, y, callback)
   end
 
   function b.unhover()
+    state = "idle"
+  end
+
+  function b.unfocus()
     state = "idle"
   end
 

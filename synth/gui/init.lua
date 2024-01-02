@@ -69,7 +69,7 @@ function mod.addElement(el)
 end
 
 function mod.removeElement(el)
-  for i=#mod.elements, 1 do
+  for i=#mod.elements, 1, -1 do
     if mod.elements[i] == el then
       table.remove(mod.elements, i)
     end
@@ -82,11 +82,13 @@ end
 function mod.getSurface(w, h)
   return sdl.createRGBSurface(w, h, 24):convertFormat(sdl.pixelFormat.BGR24)
 end
+
 function mod.render()
   state.rdr:clear()
 
   for i=1, #mod.elements do
     local el = mod.elements[i]
+    if not el then break end
     el.render(state)
   end
 
@@ -99,13 +101,15 @@ function mod.exit()
   exit = true
 end
 
-local function findElement(x, y, unhover)
+local function findElement(x, y, un)
   for i=1, #mod.elements do
     local el = mod.elements[i]
     if x>=el.x and y>=el.y and x<el.x+el.w and y<el.y+el.h and el.click then
       return el
-    elseif unhover and el.unhover then
+    elseif un == 1 and el.unhover then
       el.unhover()
+    elseif un == 2 and el.unfocus then
+      el.unfocus()
     end
   end
 end
@@ -120,11 +124,11 @@ function mod.tick()
       if el then el.click(e.button, e.x - el.x + 1, e.y - el.y + 1) end
 
     elseif e.type == sdl.event.MouseButtonUp then
-      local el = findElement(e.x, e.y)
+      local el = findElement(e.x, e.y, 2)
       if el then el.unclick(e.button, e.x - el.x + 1, e.y - el.y + 1) end
       
     elseif e.type == sdl.event.MouseMotion then
-      local el = findElement(e.x, e.y, true)
+      local el = findElement(e.x, e.y, 1)
       if el then el.hover(e.button, e.x - el.x + 1, e.y - el.y + 1) end
     end
   end
