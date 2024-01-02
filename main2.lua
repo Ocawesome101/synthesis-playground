@@ -1,33 +1,32 @@
 -- main file
 
-local gui = require("synth.gui")
-local button = require("synth.gui.button")
-local flasher = require("synth.gui.flasher")
-local menubar = require("synth.gui.menubar")
-local midi = require("synth.midi")
-local util = require("synth.util")
+local lanes = require("lanes").configure()
+local fl = require("moonfltk")
 
-if (...) then
-  midi.init(...)
+local linda1 = lanes.linda()
+local device = (...)
+
+local synth_thread = lanes.gen("*", function() 
+  local util = require("synth.util")
+  local midi = require("synth.midi")
+
+  if device then
+    midi.init(device)
+  end
+
+  while true do
+    midi.tick()
+    util.sleep(10)
+  end
+end)
+
+local synth = synth_thread()
+if synth.status == "error" then
+  local _ = synth[1]
+  return
 end
 
-gui.init()
-
-local menuBar = menubar.new(0, 0, {
-  {text = "File", menu = {
-    {text = "Create New"},
-    {text = "Open"},
-    {text = "Save"},
-    {text = "Save As"},
-    {text = "Quit", callback = gui.exit}
-  }},
-})
-
-local flasher = flasher.new("Looping", 0,0)
-flasher.x = gui.state.w - flasher.w
-
-while gui.tick() do
-  gui.render()
-  midi.tick()
-  util.sleep(10)
-end
+local win = fl.double_window(640, 480, "Synthesis Playground")
+win:done()
+win:show()
+fl.run()

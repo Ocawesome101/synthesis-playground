@@ -104,7 +104,7 @@ end
 local function findElement(x, y, un)
   for i=1, #mod.elements do
     local el = mod.elements[i]
-    if x>=el.x and y>=el.y and x<el.x+el.w and y<el.y+el.h and el.click then
+    if x>=el.x and y>=el.y and x<el.x+el.w and y<el.y+el.h-1 and el.click then
       return el
     elseif un == 1 and el.unhover then
       el.unhover()
