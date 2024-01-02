@@ -1,13 +1,14 @@
 -- lua version
 -- uses moonal and midialsa
 
-local alsa = require("midialsa")
 local snd = require("synth.snd")
+local midi = require("synth.midi")
 local waves = require("synth.waves")
 local noise = require("synth.noise")
 local loops = require("synth.loops")
 local time = require("posix.time")
 
+local alsa = require("midialsa")
 alsa.start()
 local _ = alsa.client("LuaSynthesizer", 1, 1, true)
 assert(alsa.connectfrom(0, alsa.parse_address(assert((...), "need midi device"))), "invalid midi device")
