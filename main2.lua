@@ -144,12 +144,20 @@ local currentCustom
 local customWaves = {}
 
 local function waveSelectSynth(mb)
-  layout.state.inputs.synthWaveMenu:value(mb:value())
-  layout.state.inputs.synthWaveMenu:label(mb:value())
-  if customWaves[mb:value()] then
-    linda1:send(KEY_TOSYNTH, {"custom", mb:value(), buildWave(customWaves[mb:value()])})
+  local value
+  if type(mb) == "string" then value = mb else value = mb:value() end
+  layout.state.inputs.synthWaveMenu:value(value)
+  layout.state.inputs.synthWaveMenu:label(value)
+  if customWaves[value] then
+    linda1:send(KEY_TOSYNTH, {"custom", value, buildWave(customWaves[value])})
   end
-  linda1:send(KEY_TOSYNTH, {"wave", mb:value()})
+  linda1:send(KEY_TOSYNTH, {"wave", value})
+end
+
+local function upDownButtons(id, up, down)
+  return {type="_grid",nobg=true,
+    {{type="buttonHalf",text="+",callback=up,id=id.."Up"}},
+    {{type="buttonHalf",text="-",callback=down,id=id.."Down"}}}
 end
 
 local function labeledNumberField(name, id, callSet, float, min, max)
@@ -169,9 +177,7 @@ local function labeledNumberField(name, id, callSet, float, min, max)
 
   return
     {type="label",text=name},{type="number",float=float,id=id,callback=callSet,value="0",text="0"},
-    {type="_grid",nobg=true,
-      {{type="buttonHalf",text="+",callback=callUp,id=id.."Up"}},
-      {{type="buttonHalf",text="-",callback=callDown,id=id.."Down"}}}
+    upDownButtons(id, callUp, callDown)
 end
 
 local synthControls = { type = "_grid",
@@ -338,9 +344,22 @@ local function addWave()
   waveSelectView(name)
 end
 
+local function removeWave()
+  local name = layout.state.inputs.waveMenu:value()
+  local sname = layout.state.inputs.synthWaveMenu:value()
+  if customWaves[name] then
+    layout.state.inputs.waveMenu:remove(name)
+    layout.state.inputs.synthWaveMenu:remove(name)
+    waveSelectView("sine")
+    if sname == name then
+      waveSelectSynth("sine")
+    end
+  end
+end
+
 local waveControls = { type = "_grid",
   { {type="menubutton", items={}, widthOverride = 64, text = "sine", callback=waveSelectView, id="waveMenu"},
-    {type="button", text="+", callback=addWave}},
+    upDownButtons("waveAdd", addWave, removeWave)},
   { { type = "canvas", w = 64, h = 64, draw = canvasDraw, id = "wavePreview" }, waveControlsExtra }
 }
 
