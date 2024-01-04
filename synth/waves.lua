@@ -8,16 +8,20 @@ mod.waves = {}
 -- generators return a value in the range [-1,1]
 mod.generators = {
   sine = function(cur, max)
+    cur = cur % max
     local abs = cur/max * 2 * math.pi
     return math.sin(abs)
   end,
   square = function(cur, max)
+    cur = cur % max
     return (cur*2 >= max and 1 or -1)
   end,
   saw = function(cur, max)
+    cur = cur % max
     return (cur/max)*2-1
   end,
   triangle = function(cur, max)
+    cur = cur % max
     if cur/max < 0.25 then -- 0 to 0.25
       return cur/max * 4
     elseif cur/max < 0.75 then -- 0.25 to 0.75

@@ -104,12 +104,20 @@ local function position(rows, xo, yo, MARGIN)
   if rows.container then rows.container:resize(xo, yo, rows.w+MARGIN*2, rows.h+MARGIN*2) end
   -- position all the elements
   for r, row in ipairs(rows) do
+    local lxo = xo
     for c, col in ipairs(row) do
       local resizeW = col:w()
+      local lxoa = 0
       if row.wo[c] == "remaining" then
         resizeW = rows.w - row.x[c]
+        lxoa = rows.w - (row.x[c + 1] or 0)
+        for i=c+1, #row do
+          resizeW = resizeW - row[i]:w()
+          lxoa = lxoa - row[i]:w()
+        end
       end
-      col:resize(row.x[c] + xo + MARGIN, row.y + yo + MARGIN, resizeW, col:h())
+      col:resize(row.x[c] + lxo + MARGIN, row.y + yo + MARGIN, resizeW, col:h())
+      lxo = lxo + lxoa
     end
   end
 end
@@ -152,7 +160,8 @@ function mod.elements._grid(grid)
   function faux:y() return y end
   function faux:w() return rows.w + MARGIN*2 end
   function faux:h() return rows.h + MARGIN*2 end
-  function faux:resize(x, y)
+  function faux:resize(x, y, w, h)
+    rows.w = w - MARGIN*2
     position(rows, x, y, MARGIN)
   end
   return faux

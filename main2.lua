@@ -6,11 +6,15 @@ local layout = require("synth.layout")
 local waves = require("synth.waves")
 
 local linda1 = lanes.linda()
+local linda2 = lanes.linda()
 local device = (...)
 
 local KEY_FROMSYNTH = "SynthSend"
 local KEY_TOSYNTH = "SynthRecv"
 
+local KEY_SAMPLEGEN = "SampleGen"
+
+---== SYNTHESIZER ==---
 local synth_thread = lanes.gen("*", function() 
   local util = require("synth.util")
   local midi = require("synth.midi")
@@ -101,12 +105,21 @@ local synth_thread = lanes.gen("*", function()
   end
 end)
 
+local samplegen_thread = lanes.gen("*", function(generator)
+  for i=1, 88 do
+    local 
+    linda2:send(KEY_SAMPLEGEN, {"generated", i})
+    linda1:send
+  end
+end)
+
 local synth = synth_thread()
 if synth.status == "error" then
   local _ = synth[1]
   return
 end
 
+---== UTILITY FUNCTIONS ==---
 local function buildWave(custom)
   return function(cur, max)
     local fvalues = {}
@@ -135,13 +148,25 @@ local function buildWave(custom)
   end
 end
 
-local function synthCh()
+local function synthSetChannel()
   linda1:send(KEY_TOSYNTH, {"channel", tonumber(layout.state.inputs.channel:value()) or 0})
 end
 
-local mainControls =  { type = "_grid", nobg=true, {
-  {type="button",text="Save"},{type="button",text="Load"},{type="button",text="New"},
-  {type="flasher",text="Loop",color=0xFF0000} }, }
+local function e(t) return function(T) T.type = t return T end end
+local grid = e "_grid"
+local label = e "label"
+local button = e "button"
+local canvas = e "canvas"
+local number = e "number"
+local flasher = e "flasher"
+local buttonHalf = e "buttonHalf"
+local menubutton = e "menubutton"
+local waveLists = {}
+local function waveList(e)
+  e.type = "menubutton"
+  waveLists[#waveLists+1] = e.id
+  return e
+end
 
 local current_wave = waves.generators.sine
 local currentCustom
@@ -160,9 +185,9 @@ local function waveSelectSynth(mb)
 end
 
 local function upDownButtons(id, up, down)
-  return {type="_grid",nobg=true,
-    {{type="buttonHalf",text="+",callback=up,id=id.."Up"}},
-    {{type="buttonHalf",text="-",callback=down,id=id.."Down"}}}
+  return grid {nobg=true,
+    {buttonHalf {text="+",callback=up,id=id.."Up"}},
+    {buttonHalf {text="-",callback=down,id=id.."Down"}}}
 end
 
 local function labeledNumberField(name, id, callSet, float, min, max)
@@ -181,20 +206,12 @@ local function labeledNumberField(name, id, callSet, float, min, max)
   end
 
   return
-    {type="label",text=name},{type="number",float=float,id=id,callback=callSet,value="0",text="0"},
+    label {widthOverride="remaining", text=name, widthOverride="remaining"},number {float=float,id=id,callback=callSet,value="0",text="0"},
     upDownButtons(id, callUp, callDown)
 end
 
-local synthControls = { type = "_grid",
-  { -- row 1: channel
-    labeledNumberField("Channel:", "channel", synthCh, nil, 0) },
-  { -- row 2: wave
-    {type="label",text="Wave:"},
-    {type="menubutton", text="sine", items={}, callback=waveSelectSynth, widthOverride = "remaining", id="synthWaveMenu"}
-  }
-}
-
-local function canvasDraw(self)
+---== WAVEFORM CONTROLS ==---
+local function wavePreview(self)
   if not self then return end
   self:super_draw()
   local x, y, w, h = self:xywh()
@@ -206,7 +223,7 @@ local function canvasDraw(self)
   fl.end_points()
 end
 
-local function customWaveSet(mb)
+local function waveSetParams(mb)
   if not currentCustom then return end
 
   if mb and mb:label() then mb:label(mb:value()) end
@@ -281,7 +298,7 @@ local function customWaveSet(mb)
   inputs.waveAmp:value(ramp)
 
   current_wave = buildWave(currentCustom)
-  layout.state.canvas.wavePreview:damage("user1")
+  layout.state.canvas.wavePreview:redraw()
 
   for name, val in pairs(customWaves) do
     if val == currentCustom then waveSelectSynth(name) break end
@@ -289,24 +306,13 @@ local function customWaveSet(mb)
 end
 
 local custom = 0
-local waveControlsExtra = { type = "_grid",
-  { {type = "label", text="Main Combinator"},
-    {type = "menubutton", items=waveCombinators, widthOverride=32, text="abs", callback=customWaveSet, id="waveMainMode"} },
-  { labeledNumberField("Layer", "waveLayerIndex", customWaveSet, nil, 1) },
-  { labeledNumberField("Wave", "waveIndex", customWaveSet, nil, 1) },
-  { {type = "label", text = "Generator"},
-    {type = "menubutton", items={}, widthOverride = 64, text = "sine", callback=customWaveSet, id="waveEditMenu"} },
-  { {type = "label", text="Combinator"},
-    {type = "menubutton", items=waveCombinators, widthOverride=32, text="abs", callback=customWaveSet, id="waveEditMode"} },
-  { labeledNumberField("Phase", "wavePhase", customWaveSet, true, 0, 1) },
-  { labeledNumberField("Amplitude", "waveAmp", customWaveSet, true, -1, 1) },
-}
 
-local waveControls = {"waveMainMode", "waveLayerIndex", "waveIndex", "wavePhase",
+local waveControlIDs = {"waveMainMode", "waveLayerIndex", "waveIndex", "wavePhase",
   "waveAmp", "waveEditMenu", "waveEditMode",
   "waveLayerIndexUp", "waveLayerIndexDown",
   "waveIndexUp", "waveIndexDown",
   "wavePhaseUp", "wavePhaseDown", "waveAmpUp", "waveAmpDown"}
+
 local function setupWaveControls(custom)
   if not custom then return end
   currentCustom = custom
@@ -320,8 +326,8 @@ local function setupWaveControls(custom)
   inputs.waveEditMode:value(custom[1].method)
   inputs.waveEditMode:label(custom[1].method)
 
-  for i=1, #waveControls do
-    inputs[waveControls[i]]:activate()
+  for i=1, #waveControlIDs do
+    inputs[waveControlIDs[i]]:activate()
   end
 end
 
@@ -338,24 +344,25 @@ local function waveSelectView(mb)
     currentCustom = customWaves[value]
     setupWaveControls(customWaves[value])
   else
-    for i=1, #waveControls do
-      layout.state.inputs[waveControls[i]]:deactivate()
+    for i=1, #waveControlIDs do
+      layout.state.inputs[waveControlIDs[i]]:deactivate()
     end
   end
   current_wave = waves.generators[value] or buildWave(customWaves[value])
-  layout.state.canvas.wavePreview:damage("user1")
+  layout.state.canvas.wavePreview:redraw()
 end
 
-local function addWave()
+local function waveAdd()
   custom = custom + 1
   local name = "custom"..custom
   customWaves[name] = { method = "abs", { method = "abs", { wave = "sine" } } }
-  layout.state.inputs.synthWaveMenu:add(name)
-  layout.state.inputs.waveMenu:add(name)
+  for i=1, #waveLists do
+    layout.state.inputs[waveLists[i]]:add(name)
+  end
   waveSelectView(name)
 end
 
-local function removeWave()
+local function waveRemove()
   local name = layout.state.inputs.waveMenu:value()
   local sname = layout.state.inputs.synthWaveMenu:value()
   if customWaves[name] then
@@ -368,16 +375,248 @@ local function removeWave()
   end
 end
 
-local waveControls = { type = "_grid",
-  { {type="menubutton", items={}, widthOverride = 64, text = "sine", callback=waveSelectView, id="waveMenu"},
-    upDownButtons("waveAdd", addWave, removeWave)},
-  { { type = "canvas", w = 64, h = 64, draw = canvasDraw, id = "wavePreview" }, waveControlsExtra }
+---== SAMPLER CONTROLS ==---
+local samples, sample = {}
+local function samplerAdd()
+  local n = #samples + 1
+  local name = "sample" .. n
+  samples[name] = {method = "avg", {wave = "sine", ampStart = 1, ampEnd = 0, linearity = 1, shift = 0}} 
+  sample = name
+  local inputs = layout.state.inputs
+  inputs.waveSelectSampler:value("sine")
+  inputs.samplerSelect:add(name)
+  inputs.samplerSelect:value(name)
+  inputs.samplerSelect:label(name)
+  inputs.samplerAmpStart:value(1)
+  inputs.samplerAmpEnd:value(0)
+  inputs.samplerLinearity:value(1)
+  inputs.samplerLayer:value(1)
+  inputs.samplerPhase:value(1)
+  layout.state.canvas.samplerPreview:redraw()
+  layout.state.canvas.samplerPreviewAmp:redraw()
+  layout.state.canvas.samplerPreviewWave:redraw()
+end
+
+local function samplerRemove() end
+
+local colors = {
+  0xff444400,
+  0x44ff4400,
+  0xffff4400,
+}
+local function samplerPreviewAmp(self)
+  self:super_draw()
+  if not sample or not samples[sample] then return end
+  local s = samples[sample]
+  local x, y, w, h = self:xywh()
+  for i=1, #s do
+    fl.color(colors[i%3+1])
+    fl.begin_points()
+    for step=1, 64 do
+      local amp = s[i].ampStart + (s[i].ampEnd-s[i].ampStart)*((step/64)^s[i].linearity)
+      fl.vertex(x+step+layout.MARGIN, y+32+layout.MARGIN-math.floor(amp*32))
+    end
+    fl.end_points()
+  end
+end
+
+local function samplerPreviewWave(self)
+  self:super_draw()
+  if not sample or not samples[sample] then return end
+  local generators = {}
+  local s = samples[sample]
+  for i=1, #s do
+    generators[i] = waves.generators[s[i].wave] or buildWave(customWaves[s[i].wave])
+  end
+  local x, y, w, h = self:xywh()
+  for i=1, #generators do
+    fl.color(colors[i%3+1])
+    fl.begin_points()
+    for step=1, 64 do
+      local amp = s[i].ampStart + (s[i].ampEnd-s[i].ampStart)*((step/64)^s[i].linearity)
+      fl.vertex(x+step+layout.MARGIN, y+32+layout.MARGIN+math.floor(generators[i](step, 16) * amp * -32))
+    end
+    fl.end_points()
+  end
+  fl.end_points()
+
+  if #samples == 0 or not sample then return end
+end
+
+local function samplerGetGenerator()
+  if not sample or not samples[sample] then return function() end
+  local s = samples[sample]
+  local generators = {}
+  for i=1, #s do
+    generators[i] = waves.generators[s[i].wave] or buildWave(customWaves[s[i].wave])
+  end
+  return function(cur, max)
+    local values = {}
+    for i=1, #generators do
+      local amp = s[i].ampStart + (s[i].ampEnd-s[i].ampStart)*((cur/max)^s[i].linearity)
+      values[i] = generators[i](step, w/cycles) * amp
+    end
+    local value
+    if s.method == "avg" then
+      value = waves.avg(values)
+    elseif s.method == "abs" then
+      value = waves.abs(values)
+    elseif s.method == "max" then
+      value = math.max(table.unpack(values))
+    end
+    return value
+  end
+end
+
+local function samplerPreview(self)
+  self:super_draw()
+  if not sample or not samples[sample] then return end
+  local x, y, w, h = self:xywh()
+  fl.color(0xFF44FF00)
+  local cycles = 6
+  fl.begin_points()
+  local generator = samplerGetGenerator(s)
+  for step=1, w do
+    fl.vertex(x + layout.MARGIN + step, y + layout.MARGIN + 32 + value * -32)
+  end
+  fl.end_points()
+end
+
+local lastWave
+local function samplerGetParams(_, shouldOverwrite, waveOverride)
+  if not sample or not samples[sample] then return end
+
+  local s = samples[sample]
+  local inputs = layout.state.inputs
+  local iwave = shouldOverwrite and 1 or tonumber(inputs.samplerLayer:value())
+  shouldOverwrite = shouldOverwrite or iwave ~= lastWave
+  lastWave = iwave
+  s[iwave] = s[iwave] or {wave = "sine", ampStart=1, ampEnd=0, linearity = 1, shift = 0}
+  print(iwave, s[iwave].wave)
+  local wave = shouldOverwrite and waveOverride or s[iwave].wave
+  local method = s.method
+  local ampStart, ampEnd, linearity = s[iwave].ampStart, s[iwave].ampEnd, s[iwave].linearity
+  local phase = s[iwave].shift or 0
+
+  if not shouldOverwrite then
+    wave = inputs.waveSelectSampler:value()
+    method = inputs.samplerMethod:value()
+    ampStart, ampEnd, linearity = tonumber(inputs.samplerAmpStart:value()), tonumber(inputs.samplerAmpEnd:value()),
+      tonumber(inputs.samplerLinearity:value())
+    phase = tonumber(inputs.samplerPhase:value())
+  end
+
+  s[iwave].ampStart = ampStart
+  s[iwave].ampEnd = ampEnd
+  s[iwave].linearity = linearity
+  s[iwave].wave = wave
+  s[iwave].shift = phase
+  s.method = method
+
+  inputs.samplerMethod:value(method)
+  inputs.samplerMethod:label(method)
+
+  inputs.waveSelectSampler:value(wave)
+  inputs.waveSelectSampler:label(wave)
+  inputs.samplerAmpStart:value(ampStart)
+  inputs.samplerAmpEnd:value(ampEnd)
+  inputs.samplerLinearity:value(linearity)
+  inputs.samplerPhase:value(phase)
+
+  layout.state.canvas.samplerPreview:redraw()
+  layout.state.canvas.samplerPreviewAmp:redraw()
+  layout.state.canvas.samplerPreviewWave:redraw()
+end
+
+local function samplerSelect(mb)
+  sample = mb:value()
+  mb:label(sample)
+  samplerGetParams(_, true)
+end
+
+local function uploadSamples(generator)
+  local generator = samplerGetGenerator()
+  
+end
+
+---== GUI STRUCTRURE ==---
+local synthControls = grid {
+  { -- row 1: indicators
+    flasher {text="Sample", color=0x00FF00},
+    flasher {text="Loop",color=0xFF0000} },
+  { -- row 2: channel
+    labeledNumberField("Channel:", "channel", synthSetChannel, nil, 0) },
+  { -- row 3: wave
+    label {widthOverride="remaining", text="Wave:"},
+    menubutton {text="sine", items={}, callback=waveSelectSynth, widthOverride = "remaining", id="synthWaveMenu"}
+  }
 }
 
-local uiGrid = {
-  type = "_grid",
-  { mainControls },
-  { synthControls, waveControls },
+local waveControls = grid {
+  { waveList {items={}, widthOverride = 64, text = "sine", callback=waveSelectView, id="waveMenu"},
+    upDownButtons("waveAdd", waveAdd, waveRemove)},
+  {
+    { type = "canvas", w = 64, h = 64, draw = wavePreview, id = "wavePreview" },
+    grid {
+      {
+        label {widthOverride="remaining", text="Main Combinator"},
+        menubutton {items=waveCombinators, widthOverride=32, text="abs", callback=waveSetParams, id="waveMainMode"} },
+      {
+        labeledNumberField("Layer", "waveLayerIndex", waveSetParams, nil, 1) },
+      {
+        labeledNumberField("Wave", "waveIndex", waveSetParams, nil, 1) },
+      {
+        label {widthOverride="remaining", text = "Generator"},
+        menubutton {items={}, widthOverride = 64, text = "sine", callback=waveSetParams, id="waveEditMenu"} },
+      {
+        label {widthOverride="remaining", text="Combinator"},
+        menubutton {items=waveCombinators, widthOverride=32, text="abs", callback=waveSetParams, id="waveEditMode"} },
+      {
+        labeledNumberField("Phase", "wavePhase", waveSetParams, true, 0, 1) },
+      {
+        labeledNumberField("Amplitude", "waveAmp", waveSetParams, true, -1, 1) },
+    }, }
+}
+
+local samplerControls = grid { widthOverride = "remaining",
+  { -- row 1: selection
+    menubutton {text = "sample", widthOverride = "remaining", items={}, callback=samplerSelect, id="samplerSelect"},
+    upDownButtons("sampleAdd", samplerAdd, samplerRemove) },
+  { -- row 2: previews (amplitude, wave)
+    canvas {w = 64, h = 64, id = "samplerPreviewAmp", draw = samplerPreviewAmp},
+    canvas {w = 64, h = 64, id = "samplerPreviewWave", draw = samplerPreviewWave} },
+  { -- row 3+: controls
+    label {widthOverride="remaining", text="Wave"}, waveList {text = "sine", widthOverride = 64,
+      items={}, callback=samplerGetParams, id="waveSelectSampler" }, },
+  {
+    label {widthOverride="remaining", text="Combinator"},
+    menubutton {items = waveCombinators, widthOverride = 32, text = "avg", callback = samplerGetParams, id = "samplerMethod"} },
+  {
+    labeledNumberField("Layer", "samplerLayer", samplerGetParams, false, 1) },
+  {
+    labeledNumberField("Amp start", "samplerAmpStart", samplerGetParams, true, -1, 1), },
+  {
+    labeledNumberField("Amp end", "samplerAmpEnd", samplerGetParams, true, -1, 1), },
+  {
+    labeledNumberField("Linearity", "samplerLinearity", samplerGetParams, true, 0.1, 4) },
+  {
+    labeledNumberField("Phase", "samplerPhase", samplerGetParams, true, 0, 1) },
+}
+
+local samplerUploadControls = grid { widthOverride = "remaining",
+  { canvas {widthOverride = "remaining", w = 64, h = 64, id = "samplerPreview", draw = samplerPreview} },
+  { button {text = "Generate Samples", callback = uploadSamples}, label {text = "0/88", id = "samplerGenerated"} },
+  { labeledNumberField("Synthesizer upload channel", "samplerUploadChannel", false, 0) },
+}
+
+local uiGrid = grid {
+  { grid { nobg=true,
+    { synthControls },
+    { samplerControls },
+  }, grid {nobg=true,
+    { waveControls },
+    { samplerUploadControls },
+  }, },
 }
 
 layout.init()
@@ -385,15 +624,17 @@ layout.layout(uiGrid)
 layout.present()
 
 do
+  layout.state.inputs.waveSelectSampler:add("none")
   local _waves = {}
   for wave, _ in pairs(waves.generators) do
     _waves[#_waves+1] = wave
   end
   table.sort(_waves)
   for i=1, #_waves do
-    layout.state.inputs.waveMenu:add(_waves[i])
+    for j=1, #waveLists do
+      layout.state.inputs[waveLists[j]]:add(_waves[i])
+    end
     layout.state.inputs.waveEditMenu:add(_waves[i])
-    layout.state.inputs.synthWaveMenu:add(_waves[i])
   end
   layout.state.inputs.waveEditMenu:add("none")
 end
