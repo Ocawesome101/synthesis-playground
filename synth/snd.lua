@@ -1,4 +1,4 @@
-local al = require("moonal")
+local al, device, context
 
 local mod = {}
 
@@ -8,13 +8,16 @@ mod.SAMPLE_MIN = -32768
 mod.SAMPLE_MAX = 32767
 mod.SAMPLE_RATE = 48000
 
+function mod.init()
+  al = require("moonal")
+  device = al.open_device()
+  context = al.create_context(device)
+end
+
 -- MIDI note to frequency
 function mod.freq(note)
   return A4 * 2^((note-69)/12)
 end
-
-local device = al.open_device()
-local context = al.create_context(device)
 
 -- table of:
 -- {

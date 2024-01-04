@@ -4,7 +4,7 @@ local fl = require("moonfltk")
 
 local mod = {MARGIN=5, elements = {}}
 
-local state = {flashers={},inputs={}}
+local state = {flashers={},inputs={},canvas={}}
 mod.state = state
 
 function mod.init()
@@ -39,6 +39,15 @@ function mod.elements.flasher(t)
   return box
 end
 
+function mod.elements.canvas(t)
+  local w, h = t.w, t.h
+  local box = fl.box_sub('down box', 0, 0, w+mod.MARGIN*2, h+mod.MARGIN*2)
+  box:color(0)
+  if t.draw then box:override_draw(t.draw) end
+  if t.id then state.canvas[t.id] = box end
+  return box
+end
+
 function mod.elements.button(t)
   local w = fl.width(t.text)
   local but = fl.button(0, 0, w+mod.MARGIN*2, fl.height(), t.text)
@@ -60,25 +69,32 @@ function mod.elements.buttonHalf(t)
 end
 
 function mod.elements.menubutton(t)
-  local w = fl.width(t.text)
+  local w = fl.width(t.text or "")
+  if type(t.widthOverride) == "number" then w = t.widthOverride end
   local mb = fl.menu_button(0, 0, w+mod.MARGIN+20, fl.height(), t.text)
   mb:labelfont(fl.COURIER)
+  mb:align('inside')
   for i=1, #t.items do
-    -- TODO
+    mb:add(t.items[i])
   end
+  if t.callback then mb:callback(t.callback) end
+  if t.id then state.inputs[t.id] = mb end
   return mb
 end
 
 function mod.elements.label(t)
-  local w = fl.width(t.text)
+  local x, y, w, h = fl.text_extents(t.text)
   local box = fl.box('free boxtype', 0, 0, w+mod.MARGIN*2, fl.height(), t.text)
+  box:align(fl.ALIGN_INSIDE | fl.ALIGN_LEFT)
   return box
 end
 
 function mod.elements.number(t)
   local w = fl.width("128") * 2
-  local inp = fl.int_input(0, 0, w, fl.height())
+  local inp = (t.float and fl.float_input or fl.int_input)(0, 0, w, fl.height())
   if t.id then state.inputs[t.id] = inp end
+  if t.value then inp:value(t.value) end
+  if t.callback then inp:callback(t.callback) end
   return inp
 end
 
@@ -87,7 +103,11 @@ local function position(rows, xo, yo, MARGIN)
   -- position all the elements
   for r, row in ipairs(rows) do
     for c, col in ipairs(row) do
-      col:resize(row.x[c] + xo + MARGIN, row.y + yo + MARGIN, col:w(), col:h())
+      local resizeW = col:w()
+      if row.wo[c] == "remaining" then
+        resizeW = rows.w - row.x[c]
+      end
+      col:resize(row.x[c] + xo + MARGIN, row.y + yo + MARGIN, resizeW, col:h())
     end
   end
 end
@@ -101,7 +121,7 @@ function mod.elements._grid(grid)
 
   -- create all the elements
   for r, row in ipairs(grid) do
-    local cols = {w = 0, h = 0, x = {}, y = rows.h}
+    local cols = {w = 0, h = 0, x = {}, y = rows.h, wo = {}}
     rows[r] = cols
     for c, col in ipairs(row) do
       if mod.elements[col.type] then
@@ -109,6 +129,7 @@ function mod.elements._grid(grid)
         cols.x[c] = cols.w
         cols.w = cols.w + cols[c]:w()
         cols.h = math.max(cols.h, cols[c]:h())
+        if col.widthOverride then cols.wo[c] = col.widthOverride end
       end
     end
     rows.h = rows.h + cols.h
@@ -127,8 +148,8 @@ function mod.elements._grid(grid)
   local x, y = 0, 0
   function faux:x() return x end
   function faux:y() return y end
-  function faux:w() return rows.w end
-  function faux:h() return rows.h end
+  function faux:w() return rows.w + MARGIN*2 end
+  function faux:h() return rows.h + MARGIN*2 end
   function faux:resize(x, y)
     position(rows, x, y, MARGIN)
   end

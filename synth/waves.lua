@@ -15,7 +15,7 @@ mod.generators = {
     return (cur*2 >= max and 1 or -1)
   end,
   saw = function(cur, max)
-    return (cur*2 >= max and cur/max or -1)
+    return (cur/max)*2-1
   end,
   triangle = function(cur, max)
     if cur/max < 0.25 then -- 0 to 0.25
