@@ -121,12 +121,16 @@ local function buildWave(custom)
         fvalues[l] = waves.abs(lvalues)
       elseif layer.method == "avg" then
         fvalues[l] = waves.avg(lvalues)
+      elseif layer.method == "max" then
+        fvalues[l] = math.max(table.unpack(lvalues))
       end
     end
     if custom.method == "abs" then
       return waves.abs(fvalues)
     elseif custom.method == "avg" then
       return waves.avg(fvalues)
+    elseif custom.method == "max" then
+      return math.max(table.unpack(fvalues))
     end
   end
 end
@@ -142,6 +146,7 @@ local mainControls =  { type = "_grid", nobg=true, {
 local current_wave = waves.generators.sine
 local currentCustom
 local customWaves = {}
+local waveCombinators = {"avg", "abs", "max"}
 
 local function waveSelectSynth(mb)
   local value
@@ -194,9 +199,11 @@ local function canvasDraw(self)
   self:super_draw()
   local x, y, w, h = self:xywh()
   fl.color(0x44FF4400)
+  fl.begin_points()
   for step=1, 64 do
-    fl.point(x+step+layout.MARGIN, y+32+layout.MARGIN+math.floor(current_wave(step, 64)*-32))
+    fl.vertex(x+step+layout.MARGIN, y+32+layout.MARGIN+math.floor(current_wave(step, 64)*-32))
   end
+  fl.end_points()
 end
 
 local function customWaveSet(mb)
@@ -275,18 +282,22 @@ local function customWaveSet(mb)
 
   current_wave = buildWave(currentCustom)
   layout.state.canvas.wavePreview:damage("user1")
+
+  for name, val in pairs(customWaves) do
+    if val == currentCustom then waveSelectSynth(name) break end
+  end
 end
 
 local custom = 0
 local waveControlsExtra = { type = "_grid",
   { {type = "label", text="Main Combinator"},
-    {type = "menubutton", items={"abs", "avg"}, widthOverride=32, text="abs", callback=customWaveSet, id="waveMainMode"} },
+    {type = "menubutton", items=waveCombinators, widthOverride=32, text="abs", callback=customWaveSet, id="waveMainMode"} },
   { labeledNumberField("Layer", "waveLayerIndex", customWaveSet, nil, 1) },
   { labeledNumberField("Wave", "waveIndex", customWaveSet, nil, 1) },
   { {type = "label", text = "Generator"},
     {type = "menubutton", items={}, widthOverride = 64, text = "sine", callback=customWaveSet, id="waveEditMenu"} },
   { {type = "label", text="Combinator"},
-    {type = "menubutton", items={"abs", "avg"}, widthOverride=32, text="abs", callback=customWaveSet, id="waveEditMode"} },
+    {type = "menubutton", items=waveCombinators, widthOverride=32, text="abs", callback=customWaveSet, id="waveEditMode"} },
   { labeledNumberField("Phase", "wavePhase", customWaveSet, true, 0, 1) },
   { labeledNumberField("Amplitude", "waveAmp", customWaveSet, true, -1, 1) },
 }
