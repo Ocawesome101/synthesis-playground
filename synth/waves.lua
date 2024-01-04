@@ -35,15 +35,13 @@ function mod.phaseshift(generator, shift)
   end
 end
 
-function mod.avg(...)
-  local a = {...}
+function mod.avg(a)
   local n = 0
   for i=1, #a do n = n + a[i] end
   return n/#a
 end
 
-function mod.abs(...)
-  local a = {...}
+function mod.abs(a)
   local n = 0
   for i=1, #a do
     if math.abs(a[i]) > math.abs(n) then n = a[i] end

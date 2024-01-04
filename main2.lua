@@ -115,7 +115,7 @@ local function buildWave(custom)
       for i=1, #layer do
         local gen = waves.generators[layer[i].wave]
         if layer[i].shift then gen = waves.phaseshift(gen, layer[i].shift) end
-        values[i] = gen(cur, max)
+        lvalues[i] = gen(cur, max) * (layer[i].amp or 1)
       end
       if layer.method == "abs" then
         fvalues[l] = waves.abs(lvalues)
@@ -137,48 +137,54 @@ end
 
 local mainControls =  { type = "_grid", nobg=true, {
   {type="button",text="Save"},{type="button",text="Load"},{type="button",text="New"},
-  {type="flasher",text="Loop",color=0xFF0000,align=-1} }, }
+  {type="flasher",text="Loop",color=0xFF0000} }, }
 
 local current_wave = waves.generators.sine
+local currentCustom
 local customWaves = {}
-local function waveSelect(mb)
-  layout.state.inputs.waveMenu:value(mb:value())
-  layout.state.inputs.waveMenu:label(mb:value())
+
+local function waveSelectSynth(mb)
   layout.state.inputs.synthWaveMenu:value(mb:value())
   layout.state.inputs.synthWaveMenu:label(mb:value())
-
-  current_wave = waves.generators[mb:value()] or buildWave(customWaves[mb:value()])
-  layout.state.canvas.wavePreview:damage("user1")
+  if customWaves[mb:value()] then
+    linda1:send(KEY_TOSYNTH, {"custom", mb:value(), buildWave(customWaves[mb:value()])})
+  end
   linda1:send(KEY_TOSYNTH, {"wave", mb:value()})
 end
 
-local function labeledIntField(name, id, callSet)
+local function labeledNumberField(name, id, callSet, float, min, max)
+  local inc = float and 0.1 or 1
+  min = min or -math.huge
+  max = max or math.huge
   local function callUp()
     local i = layout.state.inputs[id]
-    i:value((tonumber(i:value()) or 0) + 1)
-    callSet()
+    i:value(math.max(min, math.min(max, (tonumber(i:value()) or 0) + inc)))
+    callSet(i)
   end
   local function callDown()
     local i = layout.state.inputs[id]
-    i:value(math.max(0, (tonumber(i:value()) or 0) - 1))
-    callSet()
+    i:value(math.max(min, math.min(max, (tonumber(i:value()) or 0) - inc)))
+    callSet(i)
   end
 
   return
-    {type="label",text=name},{type="number",id=id,callback=callSet,value="0"},
-    {type="_grid",nobg=true,{{type="buttonHalf",text="+",callback=callUp}},{{type="buttonHalf",text="-",callback=callDown}}}
+    {type="label",text=name},{type="number",float=float,id=id,callback=callSet,value="0",text="0"},
+    {type="_grid",nobg=true,
+      {{type="buttonHalf",text="+",callback=callUp,id=id.."Up"}},
+      {{type="buttonHalf",text="-",callback=callDown,id=id.."Down"}}}
 end
 
 local synthControls = { type = "_grid",
   { -- row 1: channel
-    labeledIntField("Channel:", "channel", synthCh) },
+    labeledNumberField("Channel:", "channel", synthCh, nil, 0) },
   { -- row 2: wave
     {type="label",text="Wave:"},
-    {type="menubutton", text="sine", items={}, callback=waveSelect, widthOverride = "remaining", id="synthWaveMenu"}
+    {type="menubutton", text="sine", items={}, callback=waveSelectSynth, widthOverride = "remaining", id="synthWaveMenu"}
   }
 }
 
 local function canvasDraw(self)
+  if not self then return end
   self:super_draw()
   local x, y, w, h = self:xywh()
   fl.color(0x44FF4400)
@@ -187,28 +193,153 @@ local function canvasDraw(self)
   end
 end
 
+local function customWaveSet(mb)
+  if not currentCustom then return end
+
+  if mb and mb:label() then mb:label(mb:value()) end
+  local inputs = layout.state.inputs
+  local ilayer = tonumber(inputs.waveLayerIndex:value())
+  local iwave = tonumber(inputs.waveIndex:value())
+  local waveid = inputs.waveEditMenu:value()
+  local mode = inputs.waveEditMode:value()
+  local mainMode = inputs.waveMainMode:value()
+  local phase = tonumber(inputs.wavePhase:value())
+  local amp = tonumber(inputs.waveAmp:value()) or 1
+
+  currentCustom.method = mainMode
+
+  currentCustom[ilayer] = currentCustom[ilayer] or {method = "abs"}
+  local layer = currentCustom[ilayer]
+  if mb ~= inputs.waveLayerIndex then
+    layer.method = mode
+    layer[iwave] = layer[iwave] or {}
+    local wave = layer[iwave]
+    if mb ~= inputs.waveIndex then
+      wave.wave = waveid
+      wave.shift = phase
+      wave.amp = amp or 1
+    else
+      wave.wave = wave.wave or waveid
+      waveid = wave.wave
+      phase = wave.shift or 0
+      amp = wave.amp or 1
+    end
+  else
+    currentCustom[ilayer][1] = {wave = "sine", shift = 0, amp = 1}
+    waveid = "sine"
+    phase = 0
+    amp = 1
+    iwave = 1
+  end
+
+  for i=#currentCustom, 1, -1 do
+    for j=#currentCustom[i], 1, -1 do
+      if currentCustom[i][j].wave == "none" then
+        table.remove(currentCustom[i], j)
+      end
+    end
+
+    if #currentCustom[i] == 0 then
+      if #currentCustom > 1 then
+        table.remove(currentCustom, i)
+      else
+        currentCustom[1][1] = {wave = "sine"}
+      end
+    end
+  end
+  ilayer = math.min(ilayer, #currentCustom)
+  iwave = math.min(iwave, #currentCustom[ilayer])
+
+  local rmode = currentCustom[ilayer].method
+  local rwaveid = currentCustom[ilayer][iwave].wave
+  local rphase = currentCustom[ilayer][iwave].shift or 0
+  local ramp = currentCustom[ilayer][iwave].amp or 1
+
+  inputs.waveLayerIndex:value(ilayer)
+  inputs.waveIndex:value(iwave)
+
+  inputs.waveEditMenu:value(rwaveid)
+  inputs.waveEditMenu:label(rwaveid)
+
+  inputs.waveEditMode:value(rmode)
+  inputs.waveEditMode:label(rmode)
+
+  inputs.wavePhase:value(rphase)
+  inputs.waveAmp:value(ramp)
+
+  current_wave = buildWave(currentCustom)
+  layout.state.canvas.wavePreview:damage("user1")
+end
+
 local custom = 0
+local waveControlsExtra = { type = "_grid",
+  { {type = "label", text="Main Combinator"},
+    {type = "menubutton", items={"abs", "avg"}, widthOverride=32, text="abs", callback=customWaveSet, id="waveMainMode"} },
+  { labeledNumberField("Layer", "waveLayerIndex", customWaveSet, nil, 1) },
+  { labeledNumberField("Wave", "waveIndex", customWaveSet, nil, 1) },
+  { {type = "label", text = "Generator"},
+    {type = "menubutton", items={}, widthOverride = 64, text = "sine", callback=customWaveSet, id="waveEditMenu"} },
+  { {type = "label", text="Combinator"},
+    {type = "menubutton", items={"abs", "avg"}, widthOverride=32, text="abs", callback=customWaveSet, id="waveEditMode"} },
+  { labeledNumberField("Phase", "wavePhase", customWaveSet, true, 0, 1) },
+  { labeledNumberField("Amplitude", "waveAmp", customWaveSet, true, -1, 1) },
+}
+
+local waveControls = {"waveMainMode", "waveLayerIndex", "waveIndex", "wavePhase",
+  "waveAmp", "waveEditMenu", "waveEditMode",
+  "waveLayerIndexUp", "waveLayerIndexDown",
+  "waveIndexUp", "waveIndexDown",
+  "wavePhaseUp", "wavePhaseDown", "waveAmpUp", "waveAmpDown"}
+local function setupWaveControls(custom)
+  if not custom then return end
+  currentCustom = custom
+  local inputs = layout.state.inputs
+  inputs.waveLayerIndex:value(1)
+  inputs.waveIndex:value(1)
+  inputs.wavePhase:value(custom[1][1].shift or 0)
+  inputs.waveAmp:value(custom[1][1].amp or 1)
+  inputs.waveEditMenu:value(custom[1][1].wave)
+  inputs.waveEditMenu:label(custom[1][1].wave)
+  inputs.waveEditMode:value(custom[1].method)
+  inputs.waveEditMode:label(custom[1].method)
+
+  for i=1, #waveControls do
+    inputs[waveControls[i]]:activate()
+  end
+end
+
+local function waveSelectView(mb)
+  local value
+  if type(mb) == "string" then
+    value = mb
+  else
+    value = mb:value()
+  end
+  layout.state.inputs.waveMenu:value(value)
+  layout.state.inputs.waveMenu:label(value)
+  if customWaves[value] then
+    currentCustom = customWaves[value]
+    setupWaveControls(customWaves[value])
+  else
+    for i=1, #waveControls do
+      layout.state.inputs[waveControls[i]]:deactivate()
+    end
+  end
+  current_wave = waves.generators[value] or buildWave(customWaves[value])
+  layout.state.canvas.wavePreview:damage("user1")
+end
+
 local function addWave()
   custom = custom + 1
   local name = "custom"..custom
   customWaves[name] = { method = "abs", { method = "abs", { wave = "sine" } } }
   layout.state.inputs.synthWaveMenu:add(name)
   layout.state.inputs.waveMenu:add(name)
+  waveSelectView(name)
 end
 
-local waveControlsExtra = { type = "_grid",
-  { labeledIntField("Layer", "waveIndex", function() end) },
-  { labeledIntField("Wave", "waveIndex", function() end) },
-  { {type = "label", text = "Generator"},
-    {type = "menubutton", items={}, widthOverride = 64, text = "sine", callback=waveEditSelect, id="waveEditMenu"} },
-  { {type = "label", text="Combine"},
-    {type = "menubutton", items={"abs", "avg"}, widthOverride=32, text="abs", callback=waveEditMode, id="waveEditMode"} },
-  { {type = "label", text="Phase"},
-    {type="number", float = true} },
-}
-
 local waveControls = { type = "_grid",
-  { {type="menubutton", items={}, widthOverride = 64, text = "sine", callback=waveSelect, id="waveMenu"},
+  { {type="menubutton", items={}, widthOverride = 64, text = "sine", callback=waveSelectView, id="waveMenu"},
     {type="button", text="+", callback=addWave}},
   { { type = "canvas", w = 64, h = 64, draw = canvasDraw, id = "wavePreview" }, waveControlsExtra }
 }
@@ -230,10 +361,14 @@ do
   end
   table.sort(_waves)
   for i=1, #_waves do
-    layout.state.inputs.synthWaveMenu:add(_waves[i])
     layout.state.inputs.waveMenu:add(_waves[i])
+    layout.state.inputs.waveEditMenu:add(_waves[i])
+    layout.state.inputs.synthWaveMenu:add(_waves[i])
   end
+  layout.state.inputs.waveEditMenu:add("none")
 end
+
+waveSelectView("sine")
 
 fl.set_timeout(0.05, true, function() end)
 

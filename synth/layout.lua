@@ -55,6 +55,7 @@ function mod.elements.button(t)
   if t.callback then
     but:callback(t.callback)
   end
+  if t.id then state.inputs[t.id] = but end
   return but
 end
 
@@ -65,6 +66,7 @@ function mod.elements.buttonHalf(t)
   if t.callback then
     but:callback(t.callback)
   end
+  if t.id then state.inputs[t.id] = but end
   return but
 end
 
