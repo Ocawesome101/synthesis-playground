@@ -2,6 +2,7 @@
 
 local lanes = require("lanes").configure()
 local fl = require("moonfltk")
+local layout = require("synth.layout")
 
 local linda1 = lanes.linda()
 local device = (...)
@@ -50,6 +51,7 @@ if synth.status == "error" then
   return
 end
 
+--[[
 local MARGIN = 10
 
 local _, _, sw, sh = fl.screen_xywh(1)
@@ -187,7 +189,21 @@ frameMain:done()
 frameMain:show()
 
 win:done()
-win:show()
+win:show()]]
+
+local uiGrid = {
+  type = "_grid",
+  {
+    {type="button",text="Save"},{type="button",text="Load"},{type="button",text="New"},
+    {type="flasher",text="Loop",color=0xFF0000,align=-1} },
+  {
+    {type="label",text="Ch"},{type="number",id="channel"},
+      {type="_grid",nobg=true,{{type="buttonHalf",text="+"}},{{type="buttonHalf",text="-"}}}}
+}
+
+layout.init()
+local grid = layout.layout(uiGrid)
+layout.present()
 
 fl.set_timeout(0.05, true, function() end)
 
@@ -205,9 +221,9 @@ while fl.wait() do
     local k, v = linda1:receive(0, KEY_FROMSYNTH)
     if k and v[1] == "inLoop" then
       if v[2] then
-        setBright(flasherLoop)
+        layout.state.flashers.Loop:setBright()
       else
-        setDim(flasherLoop)
+        layout.state.flashers.Loop:setDim()
       end
     end
   until not k
