@@ -107,9 +107,9 @@ end)
 
 local samplegen_thread = lanes.gen("*", function(generator)
   for i=1, 88 do
-    local 
+    --local 
     linda2:send(KEY_SAMPLEGEN, {"generated", i})
-    linda1:send
+    --linda1:send
   end
 end)
 
@@ -443,18 +443,19 @@ local function samplerPreviewWave(self)
   if #samples == 0 or not sample then return end
 end
 
-local function samplerGetGenerator()
-  if not sample or not samples[sample] then return function() end
+local function samplerGetGenerator(cycles)
+  if not sample or not samples[sample] then return function() end end
   local s = samples[sample]
   local generators = {}
   for i=1, #s do
     generators[i] = waves.generators[s[i].wave] or buildWave(customWaves[s[i].wave])
   end
+  cycles = cycles or 1
   return function(cur, max)
     local values = {}
     for i=1, #generators do
       local amp = s[i].ampStart + (s[i].ampEnd-s[i].ampStart)*((cur/max)^s[i].linearity)
-      values[i] = generators[i](step, w/cycles) * amp
+      values[i] = generators[i](cur, max/cycles) * amp
     end
     local value
     if s.method == "avg" then
@@ -473,10 +474,10 @@ local function samplerPreview(self)
   if not sample or not samples[sample] then return end
   local x, y, w, h = self:xywh()
   fl.color(0xFF44FF00)
-  local cycles = 6
   fl.begin_points()
-  local generator = samplerGetGenerator(s)
+  local generator = samplerGetGenerator(6)
   for step=1, w do
+    local value = generator(step, w)
     fl.vertex(x + layout.MARGIN + step, y + layout.MARGIN + 32 + value * -32)
   end
   fl.end_points()
