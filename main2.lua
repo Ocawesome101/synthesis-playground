@@ -11,8 +11,9 @@ local device = (...)
 
 local KEY_FROMSYNTH = "SynthSend"
 local KEY_TOSYNTH = "SynthRecv"
-
 local KEY_SAMPLEGEN = "SampleGen"
+local DEBUG = false
+local debug = DEBUG and debug or function() end
 
 ---== SYNTHESIZER ==---
 local synth_thread = lanes.gen("*", function() 
@@ -89,27 +90,27 @@ local synth_thread = lanes.gen("*", function()
     repeat
       local k, v = linda1:receive(0, KEY_TOSYNTH)
       if k and v[1] == "channel" then
-        print("change channel: " .. v[2])
+        debug("change channel: " .. v[2])
         channel = v[2]
         if not held[channel] then held[channel] = {} end
       elseif k and v[1] == "wave" then
-        print("change wave: " .. v[2])
+        debug("change wave: " .. v[2])
         wave[channel] = waves.generators[v[2]] or custom[v[2]] or function() end
       elseif k and v[1] == "custom" then
-        print("update custom wave: " .. v[2])
+        debug("update custom wave: " .. v[2])
         custom[v[2]] = v[3]
       elseif k and samples[sample] and v[1] == "addsample" then
-        print("add sample PCM: " .. v[2] .. ", " .. #v[3] .. " bytes")
+        debug("add sample PCM: " .. v[2] .. ", " .. #v[3] .. " bytes")
         samples[sample][v[2]] = v[3]
       elseif k and v[1] == "playsample" then
-        print("preview sample")
+        debug("preview sample")
         snd.startNote(0, 128, v[2], channel)
       elseif k and v[1] == "sampleset" then
-        print("add sample set: " .. v[2])
+        debug("add sample set: " .. v[2])
         sample = v[2]
         samples[sample] = samples[sample] or {}
       elseif k and v[1] == "sample" then
-        print("use sample set for channel " .. channel .. ": " .. v[2])
+        debug("use sample set for channel " .. channel .. ": " .. v[2])
         sampleUse[channel] = v[2]
       end
     until not k
@@ -425,6 +426,19 @@ end
 
 ---== SAMPLER CONTROLS ==---
 local samples, sample = {}
+local samplerToggle = {
+  "sampleAddDown", "waveSelectSampler", "samplerMethod", "samplerLayer", "samplerAmpStart",
+  "samplerAmpEnd", "samplerLinearity", "samplerPhase", "samplerDuration", "samplerUploadChannel",
+  "samplerUploadDuration", "samplerUploadPreview", "samplerUpload", "samplerUploadDurationUp", "samplerUploadDurationDown",
+  "samplerUploadChannelUp", "samplerUploadChannelDown",
+  "samplerLayerUp", "samplerLayerDown",
+  "samplerAmpStartUp", "samplerAmpStartDown",
+  "samplerAmpEndUp", "samplerAmpEndDown",
+  "samplerLinearityUp", "samplerLinearityDown",
+  "samplerPhaseUp", "samplerPhaseDown",
+  "samplerDurationUp", "samplerDurationDown",
+}
+
 local function samplerAdd()
   local n = #samples + 1
   local name = "sample" .. n
@@ -444,6 +458,9 @@ local function samplerAdd()
   layout.state.canvas.samplerPreview:redraw()
   layout.state.canvas.samplerPreviewAmp:redraw()
   layout.state.canvas.samplerPreviewWave:redraw()
+  for i=1, #samplerToggle do
+    layout.state.inputs[samplerToggle[i]]:activate()
+  end
 end
 
 local function samplerRemove() end
@@ -534,7 +551,13 @@ end
 
 local lastWave
 local function samplerGetParams(_, shouldOverwrite, waveOverride)
+  for i=1, #samplerToggle do
+    layout.state.inputs[samplerToggle[i]]:deactivate()
+  end
   if not sample or not samples[sample] then return end
+  for i=1, #samplerToggle do
+    layout.state.inputs[samplerToggle[i]]:activate()
+  end
 
   local s = samples[sample]
   local inputs = layout.state.inputs
@@ -542,7 +565,6 @@ local function samplerGetParams(_, shouldOverwrite, waveOverride)
   shouldOverwrite = shouldOverwrite or iwave ~= lastWave
   lastWave = iwave
   s[iwave] = s[iwave] or {wave = "sine", ampStart=1, ampEnd=0, linearity = 1, shift = 0, duration = 1}
-  print(iwave, s[iwave].wave)
   local wave = shouldOverwrite and waveOverride or s[iwave].wave
   local method = s.method
   local ampStart, ampEnd, linearity = s[iwave].ampStart, s[iwave].ampEnd, s[iwave].linearity
@@ -683,8 +705,8 @@ local samplerControls = grid { widthOverride = "remaining",
 
 local samplerUploadControls = grid { widthOverride = "remaining",
   { canvas {widthOverride = "remaining", w = 64, h = 64, id = "samplerPreview", draw = samplerPreview} },
-  { button {text = "Preview", callback = previewSample},
-    button {text = "Generate Samples", callback = uploadSamples},
+  { button {text = "Preview", callback = previewSample, id = "samplerUploadPreview"},
+    button {text = "Generate Samples", callback = uploadSamples, id = "samplerUpload"},
     label {text = "0/88", id = "samplerGenerated"} },
   { labeledNumberField("Synthesizer upload channel", "samplerUploadChannel", function() end, false, 0) },
   { labeledNumberField("Sample duration", "samplerUploadDuration", function() end, true, 0.1) },
@@ -719,6 +741,10 @@ do
     layout.state.inputs.waveEditMenu:add(_waves[i])
   end
   layout.state.inputs.waveEditMenu:add("none")
+
+  for i=1, #samplerToggle do
+    layout.state.inputs[samplerToggle[i]]:deactivate()
+  end
 end
 
 waveSelectView("sine")
