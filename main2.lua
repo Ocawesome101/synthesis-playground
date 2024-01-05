@@ -4,7 +4,6 @@ local lanes = require("lanes").configure()
 local fl = require("moonfltk")
 local layout = require("synth.layout")
 local waves = require("synth.waves")
-local snd = require("synth.snd")
 
 local linda1 = lanes.linda()
 local linda2 = lanes.linda()
@@ -20,6 +19,7 @@ local synth_thread = lanes.gen("*", function()
   local util = require("synth.util")
   local midi = require("synth.midi")
   local loop = require("synth.loops")
+  local snd = require("synth.snd")
   snd.init()
 
   local PEDAL_SUSTAIN, PEDAL_LOOP = 64, 67
@@ -54,7 +54,7 @@ local synth_thread = lanes.gen("*", function()
     if sampleUse[channel] then
       local s = samples[sampleUse[channel]]
       if s[pitch - 20] then
-        return snd.startNote(pitch, velocity, samples[pitch - 20], channel)
+        return snd.startNote(pitch, velocity, s[pitch - 20], channel)
       end
     end
     local amp = velocity/128
@@ -99,8 +99,11 @@ local synth_thread = lanes.gen("*", function()
         print("update custom wave: " .. v[2])
         custom[v[2]] = v[3]
       elseif k and samples[sample] and v[1] == "addsample" then
-        print("add sample PCM: " .. v[2])
+        print("add sample PCM: " .. v[2] .. ", " .. #v[3] .. " bytes")
         samples[sample][v[2]] = v[3]
+      elseif k and v[1] == "playsample" then
+        print("preview sample")
+        snd.startNote(0, 128, v[2], channel)
       elseif k and v[1] == "sampleset" then
         print("add sample set: " .. v[2])
         sample = v[2]
@@ -114,36 +117,41 @@ local synth_thread = lanes.gen("*", function()
   end
 end)
 
+local function generateSample(N, generators, duration, sample)
+  local snd = require("synth.snd")
+  local samples = duration * snd.SAMPLE_RATE
+  local perCycle = {}
+  local freq = snd.freq(20+N)
+  local durations = {}
+  for i=1, #generators do
+    perCycle[i] = math.floor(snd.SAMPLE_RATE/freq+0.5)
+    durations[i] = sample[i].duration * samples
+  end
+  local data = {}
+  for i=1, samples do
+    local values = {}
+    for g=1, #generators do
+      if i <= durations[g] then
+        local s = sample[g]
+        local amp = s.ampStart + (s.ampEnd-s.ampStart)*((i/(durations[g]))^s.linearity)
+        values[#values+1] = math.floor(generators[g](i, perCycle[g]) * amp * snd.SAMPLE_MAX + 0.5)
+      end
+    end
+    if sample.method == "avg" then
+      data[i] = math.floor(waves.avg(values) + 0.5)
+    elseif sample.method == "max" then
+      data[i] = math.max(table.unpack(values))
+    elseif sample.method == "abs" then
+      data[i] = waves.abs(values)
+    end
+  end
+  return waves.getPCMString(data)
+end
+
 -- takes a list of generators, a main duration, and sample info
 local samplegen_thread = lanes.gen("*", function(generators, duration, sample)
   for N=1, 88 do
-    local samples = duration * snd.SAMPLE_RATE
-    local perCycle = {}
-    local freq = snd.freq(20+N)
-    local durations = {}
-    for i=1, #generators do
-      perCycle[i] = math.floor(snd.SAMPLE_RATE/freq+0.5)
-      durations[i] = sample[i].duration * samples
-    end
-    local data = {}
-    for i=1, samples do
-      local values = {}
-      for g=1, #generators do
-        if i <= durations[g] then
-          local s = sample[g]
-          local amp = s.ampStart + (s.ampEnd-s.ampStart)*((i/(s.duration))^s.linearity)
-          values[#values+1] = math.floor(generators[g](i, perCycle[g]) * amp + 0.5)
-        end
-      end
-      if sample.method == "avg" then
-        data[i] = waves.avg(values)
-      elseif sample.method == "max" then
-        data[i] = math.max(table.unpack(values))
-      elseif sample.method == "abs" then
-        data[i] = waves.abs(values)
-      end
-    end
-    local sampleData = waves.getPCMString(data)
+    local sampleData = generateSample(N, generators, duration, sample)
     linda2:send(KEY_SAMPLEGEN, {"generated", N})
     linda1:send(KEY_TOSYNTH, {"addsample", N, sampleData})
   end
@@ -154,6 +162,8 @@ if synth.status == "error" then
   local _ = synth[1]
   return
 end
+
+local snd = require("synth.snd")
 
 ---== UTILITY FUNCTIONS ==---
 local function buildWave(custom)
@@ -579,7 +589,7 @@ local function samplerSelect(mb)
 end
 
 local sample_gen
-local function uploadSamples(generator)
+local function uploadSamples()
   local s = samples[sample]
   local generators = {}
   for i=1, #s do
@@ -591,6 +601,18 @@ local function uploadSamples(generator)
   linda1:send(KEY_TOSYNTH, {"sampleset", sample})
   linda1:send(KEY_TOSYNTH, {"sample", sample})
   sample_gen = samplegen_thread(generators, duration, s)
+end
+
+local function previewSample()
+  local s = samples[sample]
+  local generators = {}
+  for i=1, #s do
+    generators[i] = waves.generators[s[i].wave] or buildWave(customWaves[s[i].wave])
+  end
+
+  local duration = tonumber(layout.state.inputs.samplerUploadDuration:value())
+
+  linda1:send(KEY_TOSYNTH, {"playsample", generateSample(37, generators, duration, s)})
 end
 
 ---== GUI STRUCTRURE ==---
@@ -661,7 +683,9 @@ local samplerControls = grid { widthOverride = "remaining",
 
 local samplerUploadControls = grid { widthOverride = "remaining",
   { canvas {widthOverride = "remaining", w = 64, h = 64, id = "samplerPreview", draw = samplerPreview} },
-  { button {text = "Generate Samples", callback = uploadSamples}, label {text = "0/88", id = "samplerGenerated"} },
+  { button {text = "Preview", callback = previewSample},
+    button {text = "Generate Samples", callback = uploadSamples},
+    label {text = "0/88", id = "samplerGenerated"} },
   { labeledNumberField("Synthesizer upload channel", "samplerUploadChannel", function() end, false, 0) },
   { labeledNumberField("Sample duration", "samplerUploadDuration", function() end, true, 0.1) },
 }
