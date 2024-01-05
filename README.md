@@ -1,6 +1,12 @@
 # Synthesis Playground
 
-i wrote this to play around with PCM audio synthesis.  it's written in Lua 5.4 using [moonal](https://github.com/stetre/moonal) and `midialsa` (available through LuaRocks).
+i wrote this to play around with PCM audio synthesis.  it's written in Lua 5.4.
+
+Dependencies:
+  - [moonal](https://github.com/stetre/moonal)
+  - `midialsa`
+  - `lanes`
+  - `luaposix`
 
 ## Usage
 
