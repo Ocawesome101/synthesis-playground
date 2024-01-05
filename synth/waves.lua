@@ -106,10 +106,9 @@ function mod.generatePCMPulse(generator, hz, ampStart, ampEnd, duration, lineari
   local samplesPerOscillation = floor(snd.SAMPLE_RATE/hz+0.5)
   local totalSamples = snd.SAMPLE_RATE*duration - (snd.SAMPLE_RATE*duration % samplesPerOscillation)
 
-  for i=0, totalSamples do
-    local current = i % samplesPerOscillation
+  for i=1, totalSamples do
     local amp = ampStart+(ampEnd-ampStart)*((i/totalSamples)^linearity)
-    buffer[#buffer+1] = floor(math.max(-1, math.min(1,generator(current, samplesPerOscillation))) * snd.SAMPLE_MAX * amp + 0.5)
+    buffer[#buffer+1] = floor(math.max(-1, math.min(1,generator(i, samplesPerOscillation))) * snd.SAMPLE_MAX * amp + 0.5)
   end
 
   return buffer
