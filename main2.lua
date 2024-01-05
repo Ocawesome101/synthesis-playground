@@ -4,6 +4,7 @@ local lanes = require("lanes").configure()
 local fl = require("moonfltk")
 local layout = require("synth.layout")
 local waves = require("synth.waves")
+local snd = require("synth.snd")
 
 local linda1 = lanes.linda()
 local linda2 = lanes.linda()
@@ -19,7 +20,6 @@ local synth_thread = lanes.gen("*", function()
   local util = require("synth.util")
   local midi = require("synth.midi")
   local loop = require("synth.loops")
-  local snd = require("synth.snd")
   snd.init()
 
   local PEDAL_SUSTAIN, PEDAL_LOOP = 64, 67
@@ -32,6 +32,7 @@ local synth_thread = lanes.gen("*", function()
   local channel = 0
   local custom = {}
   local wave = {[0] = waves.generators.sine}
+  local sampleUse = {}
   local sample = ""
   local samples = {}
   local held = {[0] = {}}
@@ -50,8 +51,13 @@ local synth_thread = lanes.gen("*", function()
   end)
 
   local function begin(pitch, velocity)
+    if sampleUse[channel] then
+      local s = samples[sampleUse[channel]]
+      if s[pitch - 20] then
+        return snd.startNote(pitch, velocity, samples[pitch - 20], channel)
+      end
+    end
     local amp = velocity/128
-
     snd.startLoop(pitch, velocity, waves.getPCMString(waves.generatePCM(wave[channel], snd.freq(pitch), amp)), channel)
   end
 
@@ -93,23 +99,25 @@ local synth_thread = lanes.gen("*", function()
         print("update custom wave: " .. v[2])
         custom[v[2]] = v[3]
       elseif k and samples[sample] and v[1] == "addsample" then
-        print("add sample PCM")
+        print("add sample PCM: " .. v[2])
         samples[sample][v[2]] = v[3]
-      elseif k and v[1] == "sample" then
-        print("change sample set: " .. v[2])
+      elseif k and v[1] == "sampleset" then
+        print("add sample set: " .. v[2])
         sample = v[2]
         samples[sample] = samples[sample] or {}
+      elseif k and v[1] == "sample" then
+        print("use sample set for channel " .. channel .. ": " .. v[2])
+        sampleUse[channel] = v[2]
       end
     until not k
     util.sleep(10)
   end
 end)
 
-local samplegen_thread = lanes.gen("*", function(generator)
+local samplegen_thread = lanes.gen("*", function(generator, duration)
   for i=1, 88 do
-    --local 
     linda2:send(KEY_SAMPLEGEN, {"generated", i})
-    --linda1:send
+    linda1:send(KEY_TOSYNTH, {"addsample", data})
   end
 end)
 
@@ -366,8 +374,10 @@ local function waveRemove()
   local name = layout.state.inputs.waveMenu:value()
   local sname = layout.state.inputs.synthWaveMenu:value()
   if customWaves[name] then
+    for i=1, #waveLists do
+      layout.state.inputs[waveLists[i]]:remove(name)
+    end
     layout.state.inputs.waveMenu:remove(name)
-    layout.state.inputs.synthWaveMenu:remove(name)
     waveSelectView("sine")
     if sname == name then
       waveSelectSynth("sine")
@@ -380,7 +390,8 @@ local samples, sample = {}
 local function samplerAdd()
   local n = #samples + 1
   local name = "sample" .. n
-  samples[name] = {method = "avg", {wave = "sine", ampStart = 1, ampEnd = 0, linearity = 1, shift = 0}} 
+  samples[name] = {method = "avg", duration = 3,
+    {wave = "sine", ampStart = 1, ampEnd = 0, linearity = 1, shift = 0, duration = 1}} 
   sample = name
   local inputs = layout.state.inputs
   inputs.waveSelectSampler:value("sine")
@@ -392,6 +403,7 @@ local function samplerAdd()
   inputs.samplerLinearity:value(1)
   inputs.samplerLayer:value(1)
   inputs.samplerPhase:value(1)
+  inputs.samplerDuration:value(1)
   layout.state.canvas.samplerPreview:redraw()
   layout.state.canvas.samplerPreviewAmp:redraw()
   layout.state.canvas.samplerPreviewWave:redraw()
