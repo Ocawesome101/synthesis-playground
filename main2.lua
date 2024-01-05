@@ -114,10 +114,38 @@ local synth_thread = lanes.gen("*", function()
   end
 end)
 
-local samplegen_thread = lanes.gen("*", function(generator, duration)
-  for i=1, 88 do
-    linda2:send(KEY_SAMPLEGEN, {"generated", i})
-    linda1:send(KEY_TOSYNTH, {"addsample", data})
+-- takes a list of generators, a main duration, and sample info
+local samplegen_thread = lanes.gen("*", function(generators, duration, sample)
+  for N=1, 88 do
+    local samples = duration * snd.SAMPLE_RATE
+    local perCycle = {}
+    local freq = snd.freq(20+N)
+    local durations = {}
+    for i=1, #generators do
+      perCycle[i] = math.floor(snd.SAMPLE_RATE/freq+0.5)
+      durations[i] = sample[i].duration * samples
+    end
+    local data = {}
+    for i=1, samples do
+      local values = {}
+      for g=1, #generators do
+        if i <= durations[g] then
+          local s = sample[g]
+          local amp = s.ampStart + (s.ampEnd-s.ampStart)*((i/(s.duration))^s.linearity)
+          values[#values+1] = math.floor(generators[g](i, perCycle[g]) * amp + 0.5)
+        end
+      end
+      if sample.method == "avg" then
+        data[i] = waves.avg(values)
+      elseif sample.method == "max" then
+        data[i] = math.max(table.unpack(values))
+      elseif sample.method == "abs" then
+        data[i] = waves.abs(values)
+      end
+    end
+    local sampleData = waves.getPCMString(data)
+    linda2:send(KEY_SAMPLEGEN, {"generated", N})
+    linda1:send(KEY_TOSYNTH, {"addsample", N, sampleData})
   end
 end)
 
@@ -390,8 +418,7 @@ local samples, sample = {}
 local function samplerAdd()
   local n = #samples + 1
   local name = "sample" .. n
-  samples[name] = {method = "avg", duration = 3,
-    {wave = "sine", ampStart = 1, ampEnd = 0, linearity = 1, shift = 0, duration = 1}} 
+  samples[name] = {method = "avg", {wave = "sine", ampStart = 1, ampEnd = 0, linearity = 1, shift = 0, duration = 1}} 
   sample = name
   local inputs = layout.state.inputs
   inputs.waveSelectSampler:value("sine")
@@ -403,6 +430,7 @@ local function samplerAdd()
   inputs.samplerLinearity:value(1)
   inputs.samplerLayer:value(1)
   inputs.samplerPhase:value(1)
+  inputs.samplerDuration:value(1)
   layout.state.canvas.samplerPreview:redraw()
   layout.state.canvas.samplerPreviewAmp:redraw()
   layout.state.canvas.samplerPreviewWave:redraw()
@@ -503,12 +531,13 @@ local function samplerGetParams(_, shouldOverwrite, waveOverride)
   local iwave = shouldOverwrite and 1 or tonumber(inputs.samplerLayer:value())
   shouldOverwrite = shouldOverwrite or iwave ~= lastWave
   lastWave = iwave
-  s[iwave] = s[iwave] or {wave = "sine", ampStart=1, ampEnd=0, linearity = 1, shift = 0}
+  s[iwave] = s[iwave] or {wave = "sine", ampStart=1, ampEnd=0, linearity = 1, shift = 0, duration = 1}
   print(iwave, s[iwave].wave)
   local wave = shouldOverwrite and waveOverride or s[iwave].wave
   local method = s.method
   local ampStart, ampEnd, linearity = s[iwave].ampStart, s[iwave].ampEnd, s[iwave].linearity
   local phase = s[iwave].shift or 0
+  local duration = s[iwave].duration or 1
 
   if not shouldOverwrite then
     wave = inputs.waveSelectSampler:value()
@@ -516,6 +545,7 @@ local function samplerGetParams(_, shouldOverwrite, waveOverride)
     ampStart, ampEnd, linearity = tonumber(inputs.samplerAmpStart:value()), tonumber(inputs.samplerAmpEnd:value()),
       tonumber(inputs.samplerLinearity:value())
     phase = tonumber(inputs.samplerPhase:value())
+    duration = tonumber(inputs.samplerDuration:value())
   end
 
   s[iwave].ampStart = ampStart
@@ -523,6 +553,7 @@ local function samplerGetParams(_, shouldOverwrite, waveOverride)
   s[iwave].linearity = linearity
   s[iwave].wave = wave
   s[iwave].shift = phase
+  s[iwave].duration = duration
   s.method = method
 
   inputs.samplerMethod:value(method)
@@ -534,6 +565,7 @@ local function samplerGetParams(_, shouldOverwrite, waveOverride)
   inputs.samplerAmpEnd:value(ampEnd)
   inputs.samplerLinearity:value(linearity)
   inputs.samplerPhase:value(phase)
+  inputs.samplerDuration:value(duration)
 
   layout.state.canvas.samplerPreview:redraw()
   layout.state.canvas.samplerPreviewAmp:redraw()
@@ -546,9 +578,19 @@ local function samplerSelect(mb)
   samplerGetParams(_, true)
 end
 
+local sample_gen
 local function uploadSamples(generator)
-  local generator = samplerGetGenerator()
-  
+  local s = samples[sample]
+  local generators = {}
+  for i=1, #s do
+    generators[i] = waves.generators[s[i].wave] or buildWave(customWaves[s[i].wave])
+  end
+
+  local duration = tonumber(layout.state.inputs.samplerUploadDuration:value())
+
+  linda1:send(KEY_TOSYNTH, {"sampleset", sample})
+  linda1:send(KEY_TOSYNTH, {"sample", sample})
+  sample_gen = samplegen_thread(generators, duration, s)
 end
 
 ---== GUI STRUCTRURE ==---
@@ -613,12 +655,15 @@ local samplerControls = grid { widthOverride = "remaining",
     labeledNumberField("Linearity", "samplerLinearity", samplerGetParams, true, 0.1, 4) },
   {
     labeledNumberField("Phase", "samplerPhase", samplerGetParams, true, 0, 1) },
+  {
+    labeledNumberField("Duration", "samplerDuration", samplerGetParams, true, 0.1, 1) },
 }
 
 local samplerUploadControls = grid { widthOverride = "remaining",
   { canvas {widthOverride = "remaining", w = 64, h = 64, id = "samplerPreview", draw = samplerPreview} },
   { button {text = "Generate Samples", callback = uploadSamples}, label {text = "0/88", id = "samplerGenerated"} },
-  { labeledNumberField("Synthesizer upload channel", "samplerUploadChannel", false, 0) },
+  { labeledNumberField("Synthesizer upload channel", "samplerUploadChannel", function() end, false, 0) },
+  { labeledNumberField("Sample duration", "samplerUploadDuration", function() end, true, 0.1) },
 }
 
 local uiGrid = grid {
@@ -636,6 +681,7 @@ layout.layout(uiGrid)
 layout.present()
 
 do
+  layout.state.inputs.samplerUploadDuration:value(3)
   layout.state.inputs.waveSelectSampler:add("none")
   local _waves = {}
   for wave, _ in pairs(waves.generators) do
@@ -661,14 +707,22 @@ while fl.wait() do
     fl.quit()
     break
   end
+  if sample_gen and sample_gen.status == "error" then
+    local _ = sample_gen[1]
+    sample_gen = nil
+  end
   repeat
     local k, v = linda1:receive(0, KEY_FROMSYNTH)
+    if not k then k, v = linda2:receive(0, KEY_SAMPLEGEN) end
     if k and v[1] == "inLoop" then
       if v[2] then
         layout.state.flashers.Loop:setBright()
       else
         layout.state.flashers.Loop:setDim()
       end
+    elseif k and v[1] == "generated" then
+      layout.state.labels.samplerGenerated:label(v[2].."/88")
+      layout.state.window:redraw()
     end
   until not k
 end

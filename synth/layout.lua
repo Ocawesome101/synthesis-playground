@@ -4,7 +4,7 @@ local fl = require("moonfltk")
 
 local mod = {MARGIN=5, elements = {}}
 
-local state = {flashers={},inputs={},canvas={}}
+local state = {flashers={},inputs={},canvas={},labels={}}
 mod.state = state
 
 function mod.init()
@@ -88,6 +88,7 @@ function mod.elements.label(t)
   local x, y, w, h = fl.text_extents(t.text)
   local box = fl.box('free boxtype', 0, 0, w+mod.MARGIN*2, fl.height(), t.text)
   box:align(fl.ALIGN_INSIDE | fl.ALIGN_LEFT)
+  if t.id then state.labels[t.id] = box end
   return box
 end
 
