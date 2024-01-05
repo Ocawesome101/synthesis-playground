@@ -7,6 +7,7 @@ Dependencies:
   - `midialsa`
   - `lanes`
   - `luaposix`
+  - `moonfltk`
 
 ## Usage
 
