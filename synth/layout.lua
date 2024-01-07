@@ -4,7 +4,7 @@ local fl = require("moonfltk")
 
 local mod = {MARGIN=5, elements = {}}
 
-local state = {flashers={},inputs={},canvas={},labels={}}
+local state = {flashers={},inputs={},canvas={},labels={},views={}}
 mod.state = state
 
 function mod.init()
@@ -101,6 +101,60 @@ function mod.elements.number(t)
   return inp
 end
 
+function mod.elements.scroll(t)
+  local w, h = t.w or 0, t.h or 0
+  local scroll = fl.scroll(0, 0, w, h)
+  if t.id then state.views[t.id] = scroll end
+  return scroll
+end
+
+local function dynamic_box(content, parent, horiz)
+  local box = fl.box('up box', 0, 0, 0, 0)
+  local remove = fl.button(0, 0, 0, 0, "-")
+  remove:labelfont(fl.COURIER)
+  local db = {}
+  local removeCallback
+  remove:callback(function()
+    parent:register()
+  end)
+  function db:resize(x, y, w, h)
+    parent:w(), content:h()+fl.height())
+    content:h(), parent:w(), fl.height(), "-")
+    local contw, conth = w, h
+    local bx, by, bw, bh = 0, 0, fl.height(), fl.height()
+    if horiz then
+      contw = w - fl.height()
+      bx = contw + 1
+      bh = h
+    else
+      conth = h - fl.height()
+      by = conth + 1
+      bw = w
+    end
+    box:resize(x, y, w, h)
+    content:resize(x, y, contw, conth)
+    remove:resize(x+bx, y+by, bw, bh)
+  end
+  function db:callback(f)
+    removeCallback = f
+  end
+  function db:x() return box:x() end
+  function db:y() return box:y() end
+  function db:w() return box:w() end
+  function db:h() return box:h() end
+  return db
+end
+
+function mod.elements.dynamic_column(t)
+  local add = fl.button(0, content:h(), parent:w(), fl.height(), "+")
+  local children = {}
+  for i=1, #t do
+  end
+end
+
+function mod.elements.dynamic_row()
+end
+
 local function position(rows, xo, yo, MARGIN)
   if rows.container then rows.container:resize(xo, yo, rows.w+MARGIN*2, rows.h+MARGIN*2) end
   -- position all the elements
@@ -149,8 +203,10 @@ function mod.elements._grid(grid)
 
   local MARGIN = grid.nobg and 0 or mod.MARGIN
 
-  local ww, wh = state.window:w(), state.window:h()
-  state.window:resize(state.window:x(), state.window:y(), math.max(ww, rows.w+MARGIN*2), math.max(wh, rows.h+MARGIN*2))
+  if not state.noresize then
+    local ww, wh = state.window:w(), state.window:h()
+    state.window:resize(state.window:x(), state.window:y(), math.max(ww, rows.w+MARGIN*2), math.max(wh, rows.h+MARGIN*2))
+  end
 
   position(rows, 0, 0, MARGIN)
 
