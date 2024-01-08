@@ -105,9 +105,11 @@ function mod.elements.scroll(t)
   local w, h = t.w or 0, t.h or 0
   local scroll = fl.scroll(0, 0, w, h)
   if t.id then state.views[t.id] = scroll end
+  scroll:done()
   return scroll
 end
 
+-- TODO should probably subclass fl.box or fl.group instead
 local function dynamic_box(content, parent, horiz)
   local box = fl.box('up box', 0, 0, 0, 0)
   local remove = fl.button(0, 0, 0, 0, "-")
@@ -115,11 +117,12 @@ local function dynamic_box(content, parent, horiz)
   local db = {}
   local removeCallback
   remove:callback(function()
-    parent:register()
+    parent:remove(db)
+    if removeCallback then removeCallback() end
   end)
   function db:resize(x, y, w, h)
-    parent:w(), content:h()+fl.height())
-    content:h(), parent:w(), fl.height(), "-")
+    --parent:w(), content:h()+fl.height())
+    --content:h(), parent:w(), fl.height(), "-")
     local contw, conth = w, h
     local bx, by, bw, bh = 0, 0, fl.height(), fl.height()
     if horiz then
@@ -146,13 +149,78 @@ local function dynamic_box(content, parent, horiz)
 end
 
 function mod.elements.dynamic_column(t)
-  local add = fl.button(0, content:h(), parent:w(), fl.height(), "+")
+  local box = fl.box('up box', 0, 0, t.w or 0, fl.height())
+  local add = fl.button(0, 0, t.w or 0, fl.height(), "+")
+
   local children = {}
-  for i=1, #t do
+  local dc = {}
+  local x, y, w, h = 0, 0, t.w or 0, fl.height()
+
+  add:callback(function()
+    if t.callback then
+      local elem = t.callback()
+      table.insert(children, #children, dynamic_box(elem, dc, false))
+    end
+  end)
+
+  children[#children+1] = add
+
+  function dc:x() return x end
+  function dc:y() return y end
+  function dc:w() return w end
+  function dc:h() return h end
+
+  function dc:resize(nx, ny, nw, nh)
+    if nx then x, y, w, h = nx, ny, nw, nh end
+    h = 0
+    for i=1, #children-1 do
+      children[i]:resize(x, y+h, w, children[i]:h())
+      h = h + children[i]:h()
+    end
+    h = h + fl.height()
+    box:resize(x, y, w, h)
+    add:resize(x, y+h-fl.height(), w, fl.height())
   end
+
+  dc:resize()
+
+  return dc
 end
 
-function mod.elements.dynamic_row()
+function mod.elements.dynamic_row(t)
+  local box = fl.box('up box', 0, 0, fl.height(), t.h or 0)
+  local add = fl.button(0, 0, fl.height(), t.h or 0, "+")
+
+  local children = {}
+  local dr = {}
+  local x, y, w, h = 0, 0, fl.height(), t.h or 64
+
+  add:callback(function()
+    if t.callback then
+      local elem = t.callback()
+      table.insert(children, #children, dynamic_box(elem, dr, true))
+    end
+  end)
+
+  children[#children+1] = add
+
+  function dr:x() return x end
+  function dr:y() return y end
+  function dr:w() return w end
+  function dr:h() return h end
+
+  function dr:resize(nx, ny, nw, nh)
+    if nx then x, y, w, h = nx, ny, nw, nh end
+    w = 0
+    for i=1, #children-1 do
+      children[i]:resize(x+w, y, children[i]:w(), h)
+      w = w + children[i]:w()
+    end
+    box:resize(x, y, w, h)
+    add:resize(x+w-fl.height(), y, fl.height(), h)
+  end
+
+  return dc
 end
 
 local function position(rows, xo, yo, MARGIN)

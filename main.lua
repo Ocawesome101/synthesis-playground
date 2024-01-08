@@ -12,8 +12,8 @@ local device = (...)
 local KEY_FROMSYNTH = "SynthSend"
 local KEY_TOSYNTH = "SynthRecv"
 local KEY_SAMPLEGEN = "SampleGen"
-local DEBUG = false
-local debug = DEBUG and debug or function() end
+local _DEBUG = false
+local DEBUG = _DEBUG and print or function() end
 
 ---== SYNTHESIZER ==---
 local synth_thread = lanes.gen("*", function() 
@@ -90,28 +90,37 @@ local synth_thread = lanes.gen("*", function()
     repeat
       local k, v = linda1:receive(0, KEY_TOSYNTH)
       if k and v[1] == "channel" then
-        debug("change channel: " .. v[2])
+        DEBUG("change channel: " .. v[2])
         channel = v[2]
         if not held[channel] then held[channel] = {} end
+        linda1:send(KEY_FROMSYNTH, {"sample", channel, sampleUse[channel]})
       elseif k and v[1] == "wave" then
-        debug("change wave: " .. v[2])
+        DEBUG("change wave: " .. v[2])
         wave[channel] = waves.generators[v[2]] or custom[v[2]] or function() end
       elseif k and v[1] == "custom" then
-        debug("update custom wave: " .. v[2])
+        DEBUG("update custom wave: " .. v[2])
         custom[v[2]] = v[3]
       elseif k and samples[sample] and v[1] == "addsample" then
-        debug("add sample PCM: " .. v[2] .. ", " .. #v[3] .. " bytes")
+        DEBUG("add sample PCM: " .. v[2] .. ", " .. #v[3] .. " bytes")
         samples[sample][v[2]] = v[3]
       elseif k and v[1] == "playsample" then
-        debug("preview sample")
+        DEBUG("preview sample")
         snd.startNote(0, 128, v[2], channel)
       elseif k and v[1] == "sampleset" then
-        debug("add sample set: " .. v[2])
+        DEBUG("add sample set: " .. v[2])
         sample = v[2]
         samples[sample] = samples[sample] or {}
       elseif k and v[1] == "sample" then
-        debug("use sample set for channel " .. channel .. ": " .. v[2])
+        DEBUG("use sample set for channel " .. channel .. ": " .. v[2])
         sampleUse[channel] = v[2]
+        if not samples[v[2]] then
+          linda1:send(KEY_FROMSYNTH, {"samplerequest", v[2]})
+        end
+        linda1:send(KEY_FROMSYNTH, {"sample", channel, v[2]})
+      elseif k and v[1] == "nosample" then
+        DEBUG("no sample set for channel " .. channel)
+        sampleUse[channel] = nil
+        linda1:send(KEY_FROMSYNTH, {"sample", channel, false})
       end
     until not k
     util.sleep(10)
@@ -122,10 +131,9 @@ local function generateSample(N, generators, duration, sample)
   local snd = require("synth.snd")
   local samples = duration * snd.SAMPLE_RATE
   local perCycle = {}
-  local freq = snd.freq(20+N)
   local durations = {}
   for i=1, #generators do
-    perCycle[i] = math.floor(snd.SAMPLE_RATE/freq+0.5)
+    perCycle[i] = math.floor(snd.SAMPLE_RATE/snd.freq(20+N+sample[i].pitch)+0.5)
     durations[i] = sample[i].duration * samples
   end
   local data = {}
@@ -136,6 +144,8 @@ local function generateSample(N, generators, duration, sample)
         local s = sample[g]
         local amp = s.ampStart + (s.ampEnd-s.ampStart)*((i/(durations[g]))^s.linearity)
         values[#values+1] = math.floor(generators[g](i, perCycle[g]) * amp * snd.SAMPLE_MAX + 0.5)
+      else
+        values[#values+1] = 0
       end
     end
     if sample.method == "avg" then
@@ -214,6 +224,12 @@ local function waveList(e)
   waveLists[#waveLists+1] = e.id
   return e
 end
+local sampleLists = {}
+local function sampleList(e)
+  e.type = "menubutton"
+  sampleLists[#sampleLists+1] = e.id
+  return e
+end
 
 local current_wave = waves.generators.sine
 local currentCustom
@@ -229,6 +245,18 @@ local function waveSelectSynth(mb)
     linda1:send(KEY_TOSYNTH, {"custom", value, buildWave(customWaves[value])})
   end
   linda1:send(KEY_TOSYNTH, {"wave", value})
+end
+
+local function waveSelectSample(mb)
+  local value
+  if type(mb) == "string" then value = mb else value = mb:value() end
+  layout.state.inputs.synthSampleMenu:value(value)
+  layout.state.inputs.synthSampleMenu:label(value)
+  if value == "--" then
+    linda1:send(KEY_TOSYNTH, {"nosample"})
+  else
+    linda1:send(KEY_TOSYNTH, {"sample", value})
+  end
 end
 
 local function upDownButtons(id, up, down)
@@ -437,16 +465,23 @@ local samplerToggle = {
   "samplerLinearityUp", "samplerLinearityDown",
   "samplerPhaseUp", "samplerPhaseDown",
   "samplerDurationUp", "samplerDurationDown",
+  "samplerPitchShift",
+  "samplerPitchShiftUp", "samplerPitchShiftDown",
+  "samplerPreviewPitch",
+  "samplerPreviewPitchUp", "samplerPreviewPitchDown",
 }
 
 local function samplerAdd()
   local n = #samples + 1
   local name = "sample" .. n
-  samples[name] = {method = "avg", {wave = "sine", ampStart = 1, ampEnd = 0, linearity = 1, shift = 0, duration = 1}} 
+  samples[name] = {method = "avg", {wave = "sine", ampStart = 1, ampEnd = 0, linearity = 1, shift = 0, duration = 1,
+    pitch = 0}} 
   sample = name
   local inputs = layout.state.inputs
   inputs.waveSelectSampler:value("sine")
-  inputs.samplerSelect:add(name)
+  for i=1, #sampleLists do
+    inputs[sampleLists[i]]:add(name)
+  end
   inputs.samplerSelect:value(name)
   inputs.samplerSelect:label(name)
   inputs.samplerAmpStart:value(1)
@@ -454,6 +489,7 @@ local function samplerAdd()
   inputs.samplerLinearity:value(1)
   inputs.samplerLayer:value(1)
   inputs.samplerPhase:value(1)
+  inputs.samplerPitchShift:value(0)
   inputs.samplerDuration:value(1)
   layout.state.canvas.samplerPreview:redraw()
   layout.state.canvas.samplerPreviewAmp:redraw()
@@ -492,7 +528,11 @@ local function samplerPreviewWave(self)
   local generators = {}
   local s = samples[sample]
   for i=1, #s do
-    generators[i] = waves.generators[s[i].wave] or buildWave(customWaves[s[i].wave])
+    if s[i].wave == "noise" then
+      generators[i] = require("synth.noise").noiseGenerator()
+    else
+      generators[i] = waves.generators[s[i].wave] or buildWave(customWaves[s[i].wave])
+    end
   end
   local x, y, w, h = self:xywh()
   for i=1, #generators do
@@ -514,7 +554,11 @@ local function samplerGetGenerator(cycles)
   local s = samples[sample]
   local generators = {}
   for i=1, #s do
-    generators[i] = waves.generators[s[i].wave] or buildWave(customWaves[s[i].wave])
+    if s[i].wave == "noise" then
+      generators[i] = require("synth.noise").noiseGenerator()
+    elseif s[i].wave ~= "none" then
+      generators[i] = waves.generators[s[i].wave] or buildWave(customWaves[s[i].wave])
+    end
   end
   cycles = cycles or 1
   return function(cur, max)
@@ -562,13 +606,15 @@ local function samplerGetParams(_, shouldOverwrite, waveOverride)
   local s = samples[sample]
   local inputs = layout.state.inputs
   local iwave = shouldOverwrite and 1 or tonumber(inputs.samplerLayer:value())
+  if shouldOverwrite or not lastWave then lastWave = iwave end
   shouldOverwrite = shouldOverwrite or iwave ~= lastWave
   lastWave = iwave
-  s[iwave] = s[iwave] or {wave = "sine", ampStart=1, ampEnd=0, linearity = 1, shift = 0, duration = 1}
+  s[iwave] = s[iwave] or {wave = "sine", ampStart=1, ampEnd=0, linearity = 1, shift = 0, duration = 1, pitch = 0}
   local wave = shouldOverwrite and waveOverride or s[iwave].wave
   local method = s.method
   local ampStart, ampEnd, linearity = s[iwave].ampStart, s[iwave].ampEnd, s[iwave].linearity
   local phase = s[iwave].shift or 0
+  local shift = s[iwave].pitch or 0
   local duration = s[iwave].duration or 1
 
   if not shouldOverwrite then
@@ -577,6 +623,7 @@ local function samplerGetParams(_, shouldOverwrite, waveOverride)
     ampStart, ampEnd, linearity = tonumber(inputs.samplerAmpStart:value()), tonumber(inputs.samplerAmpEnd:value()),
       tonumber(inputs.samplerLinearity:value())
     phase = tonumber(inputs.samplerPhase:value())
+    shift = tonumber(inputs.samplerPitchShift:value())
     duration = tonumber(inputs.samplerDuration:value())
   end
 
@@ -585,6 +632,7 @@ local function samplerGetParams(_, shouldOverwrite, waveOverride)
   s[iwave].linearity = linearity
   s[iwave].wave = wave
   s[iwave].shift = phase
+  s[iwave].pitch = shift
   s[iwave].duration = duration
   s.method = method
 
@@ -597,6 +645,7 @@ local function samplerGetParams(_, shouldOverwrite, waveOverride)
   inputs.samplerAmpEnd:value(ampEnd)
   inputs.samplerLinearity:value(linearity)
   inputs.samplerPhase:value(phase)
+  inputs.samplerPitchShift:value(shift)
   inputs.samplerDuration:value(duration)
 
   layout.state.canvas.samplerPreview:redraw()
@@ -611,17 +660,22 @@ local function samplerSelect(mb)
 end
 
 local sample_gen
-local function uploadSamples()
-  local s = samples[sample]
+local function uploadSamples(_sample)
+  _sample = _sample or sample
+  local s = samples[_sample]
   local generators = {}
   for i=1, #s do
-    generators[i] = waves.generators[s[i].wave] or buildWave(customWaves[s[i].wave])
+    if s[i].wave == "noise" then
+      generators[i] = require("synth.noise").noiseGenerator()
+    elseif s[i].wave ~= "none" then
+      generators[i] = waves.generators[s[i].wave] or buildWave(customWaves[s[i].wave])
+    end
   end
 
   local duration = tonumber(layout.state.inputs.samplerUploadDuration:value())
 
-  linda1:send(KEY_TOSYNTH, {"sampleset", sample})
-  linda1:send(KEY_TOSYNTH, {"sample", sample})
+  linda1:send(KEY_TOSYNTH, {"sampleset", _sample})
+  linda1:send(KEY_TOSYNTH, {"sample", _sample})
   sample_gen = samplegen_thread(generators, duration, s)
 end
 
@@ -629,16 +683,21 @@ local function previewSample()
   local s = samples[sample]
   local generators = {}
   for i=1, #s do
-    generators[i] = waves.generators[s[i].wave] or buildWave(customWaves[s[i].wave])
+    if s[i].wave == "noise" then
+      generators[i] = require("synth.noise").noiseGenerator()
+    elseif s[i].wave ~= "none" then
+      generators[i] = waves.generators[s[i].wave] or buildWave(customWaves[s[i].wave])
+    end
   end
 
   local duration = tonumber(layout.state.inputs.samplerUploadDuration:value())
+  local pitch = tonumber(layout.state.inputs.samplerPreviewPitch:value())
 
-  linda1:send(KEY_TOSYNTH, {"playsample", generateSample(37, generators, duration, s)})
+  linda1:send(KEY_TOSYNTH, {"playsample", generateSample(pitch-20, generators, duration, s)})
 end
 
 ---== GUI STRUCTRURE ==---
-local synthControls = grid {
+local synthControls = grid { widthOverride = "remaining",
   { -- row 1: indicators
     flasher {text="Sample", color=0x00FF00},
     flasher {text="Loop",color=0xFF0000} },
@@ -646,7 +705,11 @@ local synthControls = grid {
     labeledNumberField("Channel:", "channel", synthSetChannel, nil, 0) },
   { -- row 3: wave
     label {widthOverride="remaining", text="Wave:"},
-    menubutton {text="sine", items={}, callback=waveSelectSynth, widthOverride = "remaining", id="synthWaveMenu"}
+    waveList {text="sine", items={}, callback=waveSelectSynth, widthOverride = "remaining", id="synthWaveMenu"}
+  },
+  { -- row 3: sample set
+    label {widthOverride="remaining", text="Sample:"},
+    sampleList {text = "--", widthOverride = "remaining",items={"--"},callback=waveSelectSample, id="synthSampleMenu"},
   }
 }
 
@@ -678,7 +741,7 @@ local waveControls = grid {
 
 local samplerControls = grid { widthOverride = "remaining",
   { -- row 1: selection
-    menubutton {text = "sample", widthOverride = "remaining", items={}, callback=samplerSelect, id="samplerSelect"},
+    sampleList {text = "sample", widthOverride = "remaining", items={}, callback=samplerSelect, id="samplerSelect"},
     upDownButtons("sampleAdd", samplerAdd, samplerRemove) },
   { -- row 2: previews (amplitude, wave)
     canvas {w = 64, h = 64, id = "samplerPreviewAmp", draw = samplerPreviewAmp},
@@ -700,6 +763,8 @@ local samplerControls = grid { widthOverride = "remaining",
   {
     labeledNumberField("Phase", "samplerPhase", samplerGetParams, true, 0, 1) },
   {
+    labeledNumberField("Pitch Shift", "samplerPitchShift", samplerGetParams, false) },
+  {
     labeledNumberField("Duration", "samplerDuration", samplerGetParams, true, 0.1, 1) },
 }
 
@@ -710,8 +775,10 @@ local samplerUploadControls = grid { widthOverride = "remaining",
     label {text = "0/88", id = "samplerGenerated"} },
   { labeledNumberField("Synthesizer upload channel", "samplerUploadChannel", function() end, false, 0) },
   { labeledNumberField("Sample duration", "samplerUploadDuration", function() end, true, 0.1) },
+  { labeledNumberField("Preview pitch", "samplerPreviewPitch", function() end, false, 21, 100) },
 }
 
+local ui
 local uiGrid = grid {
   { grid { nobg=true,
     { synthControls },
@@ -723,12 +790,14 @@ local uiGrid = grid {
 }
 
 layout.init()
-layout.layout(uiGrid)
+ui = layout.layout(uiGrid)
 layout.present()
 
 do
   layout.state.inputs.samplerUploadDuration:value(3)
+  layout.state.inputs.samplerPreviewPitch:value(57)
   layout.state.inputs.waveSelectSampler:add("none")
+  layout.state.inputs.waveSelectSampler:add("noise")
   local _waves = {}
   for wave, _ in pairs(waves.generators) do
     _waves[#_waves+1] = wave
@@ -773,6 +842,20 @@ while fl.wait() do
     elseif k and v[1] == "generated" then
       layout.state.labels.samplerGenerated:label(v[2].."/88")
       layout.state.window:redraw()
+    elseif k and v[1] == "sample" then
+      if v[3] then
+        layout.state.flashers.Sample:setBright()
+        if type(v[3]) == "string" then
+          layout.state.inputs.synthSampleMenu:value(v[3])
+          layout.state.inputs.synthSampleMenu:label(v[3])
+        end
+      else
+        layout.state.flashers.Sample:setDim()
+      end
+    elseif k and v[1] == "samplerequest" then
+      if v[2] and samples[v[2]] then
+        uploadSamples(v[2])
+      end
     end
   until not k
 end

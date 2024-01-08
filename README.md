@@ -15,6 +15,10 @@ Dependencies:
 
 `ALSA_DEVICE` is a MIDI device specifier, e.g. `20:0` or `"Digital Piano"`.
 
+On launch you should be presented with a window like this one.
+
+![Main screen](screenshots/onlaunch.png)
+
 ## Performance
 
 the synthesizer included here runs well on my laptop with an older i7.  it should run on anything reasonably modern.
