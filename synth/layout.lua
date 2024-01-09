@@ -92,6 +92,15 @@ function mod.elements.label(t)
   return box
 end
 
+function mod.elements.input(t)
+  local w = fl.width("potato") * 2
+  if type(t.widthOverride) == "number" then w = t.widthOverride end
+  local inp = fl.input(0, 0, w, fl.height())
+  if t.id then state.inputs[t.id] = inp end
+  if t.value then inp:value(t.value) end
+  return inp
+end
+
 function mod.elements.number(t)
   local w = fl.width("128") * 2
   local inp = (t.float and fl.float_input or fl.int_input)(0, 0, w, fl.height())
@@ -250,7 +259,7 @@ end
 -- returns width and height of the grid and a table of all the created elements
 function mod.elements._grid(grid)
   local rows = {w = 0, h = 0}
-  if not grid.nobg then rows.container = fl.box('down box', 0, 0, 1, 1) end
+  if not grid.nobg then rows.container = fl.box(grid.bg or 'down box', 0, 0, 1, 1) end
 
   -- create all the elements
   for r, row in ipairs(grid) do
@@ -271,7 +280,7 @@ function mod.elements._grid(grid)
 
   local MARGIN = grid.nobg and 0 or mod.MARGIN
 
-  if not state.noresize then
+  if not grid.noresize then
     local ww, wh = state.window:w(), state.window:h()
     state.window:resize(state.window:x(), state.window:y(), math.max(ww, rows.w+MARGIN*2), math.max(wh, rows.h+MARGIN*2))
   end

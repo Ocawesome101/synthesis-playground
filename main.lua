@@ -213,6 +213,7 @@ end
 local function e(t) return function(T) T.type = t return T end end
 local grid = e "_grid"
 local label = e "label"
+local input = e "input"
 local button = e "button"
 local canvas = e "canvas"
 local number = e "number"
@@ -230,6 +231,24 @@ local function sampleList(e)
   e.type = "menubutton"
   sampleLists[#sampleLists+1] = e.id
   return e
+end
+
+local function addListEntry(l, name)
+  for i=1, #l do
+    layout.state.inputs[l[i]]:add(name)
+  end
+end
+
+local function renameListEntry(l, name, new)
+  for i=1, #l do
+    layout.state.inputs[l[i]]:replace(name, new)
+  end
+end
+
+local function removeListEntry(l, name)
+  for i=1, #l do
+    layout.state.inputs[l[i]]:remove(name)
+  end
 end
 
 local current_wave = waves.generators.sine
@@ -284,6 +303,32 @@ local function labeledNumberField(name, id, callSet, float, min, max)
   return
     label {widthOverride="remaining", text=name, widthOverride="remaining"},number {float=float,id=id,callback=callSet,value="0",text="0"},
     upDownButtons(id, callUp, callDown)
+end
+
+local function textDialog(title, prompt)
+  local win = fl.window(10, 10, title)
+  local ret, cancel = false, false
+  local mgrid = grid { noresize = true, bg = 'flat box',
+    { label { text = prompt } },
+    { input { widthOverride = "remaining", id = "inputDialog" } },
+    { grid { bg = 'flat box', { button { text = "OK", callback = function()
+        win:hide()
+        ret = true
+      end },
+      button { text = "Cancel", callback = function()
+        win:hide()
+        ret = true
+        cancel = true
+      end } } } }
+  }
+  win:set_modal()
+  local mu = layout.layout(mgrid)
+  win:resize(win:x(), win:y(), mu:w(), mu:h())
+  win:done()
+  win:show()
+  repeat until ret or (not fl.wait()) or (not win:shown())
+  if cancel then return nil end
+  return layout.state.inputs.inputDialog:value()
 end
 
 ---== WAVEFORM CONTROLS ==---
@@ -434,9 +479,7 @@ local function waveAdd(name, data)
     name = "custom"..custom
   end
   customWaves[name] = data or { method = "abs", { method = "abs", { wave = "sine" } } }
-  for i=1, #waveLists do
-    layout.state.inputs[waveLists[i]]:add(name)
-  end
+  addListEntry(waveLists, name)
   waveSelectView(name)
 end
 
@@ -444,9 +487,7 @@ local function waveRemove()
   local name = layout.state.inputs.waveMenu:value()
   local sname = layout.state.inputs.synthWaveMenu:value()
   if customWaves[name] then
-    for i=1, #waveLists do
-      layout.state.inputs[waveLists[i]]:remove(name)
-    end
+    removeListEntry(waveLists, name)
     layout.state.inputs.waveMenu:remove(name)
     waveSelectView("sine")
     if sname == name then
@@ -455,8 +496,30 @@ local function waveRemove()
   end
 end
 
+local samples, sample, samplerGetParams = {}
+local function waveRename()
+  local name = layout.state.inputs.waveMenu:value()
+  if customWaves[name] then
+    local new = textDialog("Rename Wave", "Old name: " .. name)
+    if not new then return end
+    renameListEntry(waveLists, name, new)
+    customWaves[new] = customWaves[name]
+    customWaves[name] = nil
+    waveSelectView(new)
+    for _, v in pairs(samples) do
+      for i=1, #v do
+        if v[i].wave == name then
+          v[i].wave = new
+        end
+      end
+    end
+    samplerGetParams()
+  else
+    fl.alert("cannot rename built-in wave generator")
+  end
+end
+
 ---== SAMPLER CONTROLS ==---
-local samples, sample = {}
 local samplerToggle = {
   "sampleAddDown", "waveSelectSampler", "samplerMethod", "samplerLayer", "samplerAmpStart",
   "samplerAmpEnd", "samplerLinearity", "samplerPhase", "samplerDuration", "samplerUploadChannel",
@@ -485,9 +548,7 @@ local function samplerAdd(name, data)
   sample = name
   local inputs = layout.state.inputs
   inputs.waveSelectSampler:value("sine")
-  for i=1, #sampleLists do
-    inputs[sampleLists[i]]:add(name)
-  end
+  addListEntry(sampleLists, name)
   inputs.samplerSelect:value(name)
   inputs.samplerSelect:label(name)
   inputs.samplerAmpStart:value(samples[name][1].ampStart)
@@ -600,7 +661,7 @@ local function samplerPreview(self)
 end
 
 local lastWave
-local function samplerGetParams(_, shouldOverwrite, waveOverride)
+samplerGetParams = function(_, shouldOverwrite, waveOverride)
   for i=1, #samplerToggle do
     layout.state.inputs[samplerToggle[i]]:deactivate()
   end
@@ -667,7 +728,7 @@ end
 
 local sample_gen
 local function uploadSamples(_sample)
-  _sample = _sample or sample
+  if type(_sample) ~= "string" then _sample = sample end
   local s = samples[_sample]
   local generators = {}
   for i=1, #s do
@@ -703,7 +764,7 @@ local function previewSample()
 end
 
 ---== LOAD/SAVE ==---
-local function loadButton(ext, add, text)
+local function loadButton(ext, add, text, loadFunc)
   return button {
     text = text or "Load", callback = function()
       local chooser = fl.native_file_chooser()
@@ -712,39 +773,56 @@ local function loadButton(ext, add, text)
       local res = chooser:show()
       if res == "cancel" or not res then return end
       local filename = chooser:filename()
+      local name = filename:match("/([^/]+)%."..ext.."$")
       local handle, err = io.open(filename, "r")
       if not handle then return fl.alert(err) end
-      local name = filename:match("/(^/+)$")
-      add(name, ser.unserialize(handle:read("a")))
+      local data = handle:read("a")
+      if loadFunc then
+        loadFunc(data)
+      else
+        add(name, ser.unserialize(data))
+      end
       handle:close()
     end
   }
 end
 
-local function saveButton(tab, mbKey, ext, text)
+local function saveButton(tab, mbKey, ext, text, saveFunc)
   return button {
     text = text or "Save", callback = function()
-      local name = layout.state.inputs[mbKey]:value()
-      if not tab[name] then return fl.alert("Not saveable") end
+      local name
+      if saveFunc then
+        name = "untitled"
+      else
+        name = layout.state.inputs[mbKey]:value()
+        if not tab[name] then return fl.alert("Not saveable") end
+      end
+      if not name then return end
       local chooser = fl.native_file_chooser("save file")
+
       chooser:filter("*."..ext)
       chooser:directory(os.getenv("PWD") or os.getenv("HOME") or "/")
       chooser:options("saveas confirm", "use filter ext")
-      if not name then return end
       chooser:preset_file(name.."."..ext)
+
       local res = chooser:show()
       if res == "cancel" or not res then return end
+
       local filename = chooser:filename()
       local handle, err = io.open(filename, "w")
       if not handle then return fl.alert(err) end
-      handle:write(ser.serialize(tab[name]))
+      if saveFunc then
+        saveFunc(filename, handle)
+      else
+        handle:write(ser.serialize(tab[name]))
+      end
       handle:close()
     end
   }
 end
 
-local function loadSaveControl(tab, mbKey, ext, funcAdd, textLoad, textSave, vert)
-  local l, s = loadButton(ext, funcAdd, textLoad), saveButton(tab, mbKey, ext, textSave)
+local function loadSaveControl(tab, mbKey, ext, funcAdd, textLoad, textSave, vert, funcLoad, funcSave)
+  local l, s = loadButton(ext, funcAdd, textLoad, funcLoad), saveButton(tab, mbKey, ext, textSave, funcSave)
   if vert then
     return grid { nobg = true,
       { l },
@@ -775,7 +853,9 @@ local synthControls = grid { widthOverride = "remaining",
 }
 
 local waveControls = grid {
-  { waveList {items={}, widthOverride = 64, text = "sine", callback=waveSelectView, id="waveMenu"},
+  {
+    button {text = "…", callback = waveRename},
+    waveList {items={}, widthOverride = "remaining", text = "sine", callback=waveSelectView, id="waveMenu"},
     upDownButtons("waveAdd", waveAdd, waveRemove),
     loadSaveControl(customWaves, "waveMenu", "spw", waveAdd)},
   {
@@ -803,6 +883,7 @@ local waveControls = grid {
 
 local samplerControls = grid { widthOverride = "remaining",
   { -- row 1: selection
+    button {text = "…", callback = samplerRename},
     sampleList {text = "--", widthOverride = "remaining", items={}, callback=samplerSelect, id="samplerSelect"},
     upDownButtons("sampleAdd", samplerAdd, samplerRemove) },
   { -- row 2: previews (amplitude, wave)
@@ -841,12 +922,27 @@ local samplerUploadControls = grid { widthOverride = "remaining",
   { labeledNumberField("Preview pitch", "samplerPreviewPitch", function() end, false, 21, 100) },
 }
 
+local projectControls = grid { nobg = "true",
+  { loadSaveControl(nil, nil, "spproj", nil, "Load Project", "Save Project", false, function(data)
+    local d = ser.unserialize(data)
+    for k, v in pairs(d.waves) do
+      waveAdd(k, v)
+    end
+    for k, v in pairs(d.samples) do
+      samplerAdd(k, v)
+    end
+  end, function(name, handle)
+    local d = {waves = customWaves, samples = samples}
+  end) }
+}
+
 local ui
 local uiGrid = grid {
   { grid { nobg=true,
     { synthControls },
     { samplerControls },
   }, grid {nobg=true,
+    { projectControls },
     { waveControls },
     { samplerUploadControls },
   }, },
@@ -855,6 +951,7 @@ local uiGrid = grid {
 fl.option("uses gtk", false)
 layout.init()
 ui = layout.layout(uiGrid)
+layout.state.window:done()
 layout.present()
 
 do
@@ -867,13 +964,13 @@ do
     _waves[#_waves+1] = wave
   end
   table.sort(_waves)
+  -- this is handled separately because it should only have sine, saw, square, and triangle
+  -- and nothing else
+  layout.state.inputs.waveEditMenu:add("none")
   for i=1, #_waves do
-    for j=1, #waveLists do
-      layout.state.inputs[waveLists[j]]:add(_waves[i])
-    end
+    addListEntry(waveLists, _waves[i])
     layout.state.inputs.waveEditMenu:add(_waves[i])
   end
-  layout.state.inputs.waveEditMenu:add("none")
 
   for i=1, #samplerToggle do
     layout.state.inputs[samplerToggle[i]]:deactivate()
