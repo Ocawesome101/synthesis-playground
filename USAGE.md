@@ -28,6 +28,8 @@ Synthesis Playground comes with a built-in wave generator that allows you to lay
 
 A new wave generator can be created by clicking the "+" button next to the wave selector drop-down above preview A.  There is currently no way to rename these.
 
+The "Load" and "Save" buttons next to the drop-down may be used to save and load waves from disk.
+
 Preview A displays one cycle of the currently selected wave.
 
 The `Main Combinator` drop-down specifies which combinator to use when combining layers.  The `Layer` field specifies which layer to edit.  The `Wave` field specifies which wave to edit.  The `Layer Combinator` drop-down specifies which combinator to use to combine the current layer.
@@ -37,7 +39,7 @@ The rest of the controls are used to modify the current wave: `Generator` contro
 ## Sample Editor
 This section of the interface allows you to create sample profiles, used to generate more complex sounds than the real-time wave generator is capable of.
 
-Create a new sample by clicking the `+` button at the top right of the sample editor section.
+Create a new sample by clicking the `+` button at the top right of the sample editor section.  Load a sample from disk by clicking the "L" button, and save a sample to disk with the "S" button.
 
 The `Combinator` control functions similarly to that in the wave editor; that is, it specifies which combinator to use to combine all the layers of the sample.  The `Layer` control specifies which layer of the sample to edit.
 

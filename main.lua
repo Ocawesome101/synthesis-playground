@@ -724,11 +724,12 @@ end
 local function saveButton(tab, mbKey, ext, text)
   return button {
     text = text or "Save", callback = function()
+      local name = layout.state.inputs[mbKey]:value()
+      if not tab[name] then return fl.alert("Not saveable") end
       local chooser = fl.native_file_chooser("save file")
       chooser:filter("*."..ext)
       chooser:directory(os.getenv("PWD") or os.getenv("HOME") or "/")
       chooser:options("saveas confirm", "use filter ext")
-      local name = layout.state.inputs[mbKey]:value()
       if not name then return end
       chooser:preset_file(name.."."..ext)
       local res = chooser:show()
@@ -775,7 +776,8 @@ local synthControls = grid { widthOverride = "remaining",
 
 local waveControls = grid {
   { waveList {items={}, widthOverride = 64, text = "sine", callback=waveSelectView, id="waveMenu"},
-    upDownButtons("waveAdd", waveAdd, waveRemove)},
+    upDownButtons("waveAdd", waveAdd, waveRemove),
+    loadSaveControl(customWaves, "waveMenu", "spw", waveAdd)},
   {
     { type = "canvas", w = 64, h = 64, draw = wavePreview, id = "wavePreview" },
     grid {
