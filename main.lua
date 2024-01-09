@@ -253,7 +253,7 @@ local function removeListEntry(l, name)
   end
 end
 
-local currentProject = "untitled"
+local currentProject
 local current_wave = waves.generators.sine
 local currentCustom
 local customWaves = {}
@@ -349,6 +349,7 @@ end
 
 local function waveSetParams(mb)
   if not currentCustom then return end
+  layout.state.flashers.Unsaved:setBright()
 
   if mb and mb:label() then mb:label(mb:value()) end
   local inputs = layout.state.inputs
@@ -477,6 +478,7 @@ local function waveSelectView(mb)
 end
 
 local function waveAdd(name, data)
+  layout.state.flashers.Unsaved:setBright()
   if type(name) ~= "string" then
     custom = custom + 1
     name = "custom"..custom
@@ -542,6 +544,7 @@ local samplerToggle = {
 
 local sampleN = 0
 local function samplerAdd(name, data)
+  layout.state.flashers.Unsaved:setBright()
   if type(name) ~= "string" then
     sampleN = sampleN + 1
     name = "sample" .. sampleN
@@ -678,6 +681,7 @@ end
 
 local lastWave
 samplerGetParams = function(_, shouldOverwrite, waveOverride)
+  layout.state.flashers.Unsaved:setBright()
   for i=1, #samplerToggle do
     layout.state.inputs[samplerToggle[i]]:deactivate()
   end
@@ -803,28 +807,31 @@ local function loadButton(ext, add, text, loadFunc)
   }
 end
 
-local function saveButton(tab, mbKey, ext, text, saveFunc)
+local function saveButton(tab, mbKey, ext, text, saveFunc, noSaveAs)
   return button {
     text = text or "Save", callback = function()
       local name
       if saveFunc then
-        name = currentProject
+        name = currentProject or "untitled"
       else
         name = layout.state.inputs[mbKey]:value()
         if not tab[name] then return fl.alert("Not saveable") end
       end
       if not name then return end
-      local chooser = fl.native_file_chooser("save file")
+      local filename = currentProject
+      if (not filename) or (not noSaveAs) then
+        local chooser = fl.native_file_chooser("save file")
 
-      chooser:filter("*."..ext)
-      chooser:directory(os.getenv("PWD") or os.getenv("HOME") or "/")
-      chooser:options("saveas confirm", "use filter ext")
-      chooser:preset_file(name.."."..ext)
+        chooser:filter("*."..ext)
+        chooser:directory(os.getenv("PWD") or os.getenv("HOME") or "/")
+        chooser:options("saveas confirm", "use filter ext")
+        chooser:preset_file(name.."."..ext)
 
-      local res = chooser:show()
-      if res == "cancel" or not res then return end
+        local res = chooser:show()
+        if res == "cancel" or not res then return end
 
-      local filename = chooser:filename()
+        filename = chooser:filename()
+      end
       local handle, err = io.open(filename, "w")
       if not handle then return fl.alert(err) end
       if saveFunc then
@@ -841,12 +848,12 @@ local function loadSaveControl(tab, mbKey, ext, funcAdd, textLoad, textSave, ver
   local l, s = loadButton(ext, funcAdd, textLoad, funcLoad), saveButton(tab, mbKey, ext, textSave, funcSave)
   if vert then
     return grid { nobg = true,
+      { s },
       { l },
-      { s }
     }
   else
     return grid { nobg = true,
-      { l, s }
+      { s, l }
     }
   end
 end
@@ -946,21 +953,28 @@ local samplerUploadControls = grid { widthOverride = "remaining",
   { labeledNumberField("Preview pitch", "samplerPreviewPitch", function() end, false, 21, 100) },
 }
 
+local function saveProject(name, handle)
+  local d = {waves = customWaves, samples = samples}
+  currentProject = name
+  handle:write(ser.serialize(d))
+  layout.state.flashers.Unsaved:setDim()
+end
+
 local projectControls = grid { nobg = "true",
-  { loadSaveControl(nil, nil, "spproj", nil, "Load Project", "Save Project", false, function(name, data)
-    local d = ser.unserialize(data)
-    currentProject = name
-    for k, v in pairs(d.waves) do
-      waveAdd(k, v)
-    end
-    for k, v in pairs(d.samples) do
-      samplerAdd(k, v)
-    end
-  end, function(name, handle)
-    local d = {waves = customWaves, samples = samples}
-    currentProject = name
-    handle:write(ser.serialize(d))
-  end) }
+  { label {text="Project"},
+    saveButton(nil, nil, "spproj", "Save", saveProject, true),
+    loadSaveControl(nil, nil, "spproj", nil, "Load", "Save As", false, function(name, data)
+      local d = ser.unserialize(data)
+      currentProject = name
+      for k, v in pairs(d.waves) do
+        waveAdd(k, v)
+      end
+      for k, v in pairs(d.samples) do
+        samplerAdd(k, v)
+      end
+    end, saveProject),
+    flasher {text="Unsaved", color=0xFFFF00},
+  }
 }
 
 local ui
