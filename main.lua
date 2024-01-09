@@ -175,6 +175,7 @@ if synth.status == "error" then
 end
 
 local snd = require("synth.snd")
+local ser = require("synth.serialize")
 
 ---== UTILITY FUNCTIONS ==---
 local function buildWave(custom)
@@ -427,10 +428,12 @@ local function waveSelectView(mb)
   layout.state.canvas.wavePreview:redraw()
 end
 
-local function waveAdd()
-  custom = custom + 1
-  local name = "custom"..custom
-  customWaves[name] = { method = "abs", { method = "abs", { wave = "sine" } } }
+local function waveAdd(name, data)
+  if type(name) ~= "string" then
+    custom = custom + 1
+    name = "custom"..custom
+  end
+  customWaves[name] = data or { method = "abs", { method = "abs", { wave = "sine" } } }
   for i=1, #waveLists do
     layout.state.inputs[waveLists[i]]:add(name)
   end
@@ -472,11 +475,13 @@ local samplerToggle = {
 }
 
 local sampleN = 0
-local function samplerAdd()
-  sampleN = sampleN + 1
-  local name = "sample" .. sampleN
-  samples[name] = {method = "avg", {wave = "sine", ampStart = 1, ampEnd = 0, linearity = 1, shift = 0, duration = 1,
-    pitch = 0}} 
+local function samplerAdd(name, data)
+  if type(name) ~= "string" then
+    sampleN = sampleN + 1
+    name = "sample" .. sampleN
+  end
+  samples[name] = data or {
+    method = "avg", {wave = "sine", ampStart = 1, ampEnd = 0, linearity = 1, shift = 0, duration = 1, pitch = 0}} 
   sample = name
   local inputs = layout.state.inputs
   inputs.waveSelectSampler:value("sine")
@@ -485,13 +490,13 @@ local function samplerAdd()
   end
   inputs.samplerSelect:value(name)
   inputs.samplerSelect:label(name)
-  inputs.samplerAmpStart:value(1)
-  inputs.samplerAmpEnd:value(0)
-  inputs.samplerLinearity:value(1)
+  inputs.samplerAmpStart:value(samples[name][1].ampStart)
+  inputs.samplerAmpEnd:value(samples[name][1].ampEnd)
+  inputs.samplerLinearity:value(samples[name][1].linearity)
   inputs.samplerLayer:value(1)
-  inputs.samplerPhase:value(1)
-  inputs.samplerPitchShift:value(0)
-  inputs.samplerDuration:value(1)
+  inputs.samplerPhase:value(samples[name][1].shift)
+  inputs.samplerPitchShift:value(samples[name][1].pitch)
+  inputs.samplerDuration:value(samples[name][1].duration)
   layout.state.canvas.samplerPreview:redraw()
   layout.state.canvas.samplerPreviewAmp:redraw()
   layout.state.canvas.samplerPreviewWave:redraw()
@@ -697,6 +702,60 @@ local function previewSample()
   linda1:send(KEY_TOSYNTH, {"playsample", generateSample(pitch-20, generators, duration, s)})
 end
 
+---== LOAD/SAVE ==---
+local function loadButton(ext, add, text)
+  return button {
+    text = text or "Load", callback = function()
+      local chooser = fl.native_file_chooser()
+      chooser:filter("*."..ext)
+      chooser:directory(os.getenv("PWD") or os.getenv("HOME") or "/")
+      local res = chooser:show()
+      if res == "cancel" or not res then return end
+      local filename = chooser:filename()
+      local handle, err = io.open(filename, "r")
+      if not handle then return fl.alert(err) end
+      local name = filename:match("/(^/+)$")
+      add(name, ser.unserialize(handle:read("a")))
+      handle:close()
+    end
+  }
+end
+
+local function saveButton(tab, mbKey, ext, text)
+  return button {
+    text = text or "Save", callback = function()
+      local chooser = fl.native_file_chooser("save file")
+      chooser:filter("*."..ext)
+      chooser:directory(os.getenv("PWD") or os.getenv("HOME") or "/")
+      chooser:options("saveas confirm", "use filter ext")
+      local name = layout.state.inputs[mbKey]:value()
+      if not name then return end
+      chooser:preset_file(name.."."..ext)
+      local res = chooser:show()
+      if res == "cancel" or not res then return end
+      local filename = chooser:filename()
+      local handle, err = io.open(filename, "w")
+      if not handle then return fl.alert(err) end
+      handle:write(ser.serialize(tab[name]))
+      handle:close()
+    end
+  }
+end
+
+local function loadSaveControl(tab, mbKey, ext, funcAdd, textLoad, textSave, vert)
+  local l, s = loadButton(ext, funcAdd, textLoad), saveButton(tab, mbKey, ext, textSave)
+  if vert then
+    return grid { nobg = true,
+      { l },
+      { s }
+    }
+  else
+    return grid { nobg = true,
+      { l, s }
+    }
+  end
+end
+
 ---== GUI STRUCTRURE ==---
 local synthControls = grid { widthOverride = "remaining",
   { -- row 1: indicators
@@ -746,7 +805,8 @@ local samplerControls = grid { widthOverride = "remaining",
     upDownButtons("sampleAdd", samplerAdd, samplerRemove) },
   { -- row 2: previews (amplitude, wave)
     canvas {w = 64, h = 64, id = "samplerPreviewAmp", draw = samplerPreviewAmp},
-    canvas {w = 64, h = 64, id = "samplerPreviewWave", draw = samplerPreviewWave} },
+    canvas {w = 64, h = 64, id = "samplerPreviewWave", draw = samplerPreviewWave},
+    loadSaveControl(samples, "samplerSelect", "sps", samplerAdd, "L", "S", true) },
   { -- row 3+: controls
     label {widthOverride="remaining", text="Combinator"},
     menubutton {items = waveCombinators, widthOverride = 32, text = "avg", callback = samplerGetParams, id = "samplerMethod"} },
@@ -790,6 +850,7 @@ local uiGrid = grid {
   }, },
 }
 
+fl.option("uses gtk", false)
 layout.init()
 ui = layout.layout(uiGrid)
 layout.present()
