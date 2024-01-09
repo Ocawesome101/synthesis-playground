@@ -241,7 +241,9 @@ end
 
 local function renameListEntry(l, name, new)
   for i=1, #l do
-    layout.state.inputs[l[i]]:replace(name, new)
+    local I = layout.state.inputs[l[i]]
+    I:replace(name, new)
+    if I:label() == name then I:label(new) end
   end
 end
 
@@ -251,6 +253,7 @@ local function removeListEntry(l, name)
   end
 end
 
+local currentProject = "untitled"
 local current_wave = waves.generators.sine
 local currentCustom
 local customWaves = {}
@@ -568,6 +571,19 @@ end
 
 local function samplerRemove() end
 
+local function samplerRename()
+  local name = sample
+  if not sample then
+    return fl.alert("create or import a sample first")
+  end
+  local new = textDialog("Rename Sample", "Old: " .. name)
+  if not new then return end
+  samples[new] = samples[sample]
+  samples[sample] = nil
+  renameListEntry(sampleLists, sample, new)
+  sample = new
+end
+
 local colors = {
   0xff444400,
   0x44ff4400,
@@ -778,7 +794,7 @@ local function loadButton(ext, add, text, loadFunc)
       if not handle then return fl.alert(err) end
       local data = handle:read("a")
       if loadFunc then
-        loadFunc(data)
+        loadFunc(name, data)
       else
         add(name, ser.unserialize(data))
       end
@@ -792,7 +808,7 @@ local function saveButton(tab, mbKey, ext, text, saveFunc)
     text = text or "Save", callback = function()
       local name
       if saveFunc then
-        name = "untitled"
+        name = currentProject
       else
         name = layout.state.inputs[mbKey]:value()
         if not tab[name] then return fl.alert("Not saveable") end
@@ -889,7 +905,15 @@ local samplerControls = grid { widthOverride = "remaining",
   { -- row 2: previews (amplitude, wave)
     canvas {w = 64, h = 64, id = "samplerPreviewAmp", draw = samplerPreviewAmp},
     canvas {w = 64, h = 64, id = "samplerPreviewWave", draw = samplerPreviewWave},
-    loadSaveControl(samples, "samplerSelect", "sps", samplerAdd, "L", "S", true) },
+    loadSaveControl(samples, "samplerSelect", "sps", function(name, data)
+      for i=1, #data do
+        local wave = data[i].wave
+        if not (waves.generators[wave] or customWaves[wave]) then
+          return fl.alert("sample uses invalid custom wave, cannot import :(")
+        end
+      end
+      samplerAdd(name, data)
+    end, "L", "S", true) },
   { -- row 3+: controls
     label {widthOverride="remaining", text="Combinator"},
     menubutton {items = waveCombinators, widthOverride = 32, text = "avg", callback = samplerGetParams, id = "samplerMethod"} },
@@ -923,8 +947,9 @@ local samplerUploadControls = grid { widthOverride = "remaining",
 }
 
 local projectControls = grid { nobg = "true",
-  { loadSaveControl(nil, nil, "spproj", nil, "Load Project", "Save Project", false, function(data)
+  { loadSaveControl(nil, nil, "spproj", nil, "Load Project", "Save Project", false, function(name, data)
     local d = ser.unserialize(data)
+    currentProject = name
     for k, v in pairs(d.waves) do
       waveAdd(k, v)
     end
@@ -933,6 +958,8 @@ local projectControls = grid { nobg = "true",
     end
   end, function(name, handle)
     local d = {waves = customWaves, samples = samples}
+    currentProject = name
+    handle:write(ser.serialize(d))
   end) }
 }
 
