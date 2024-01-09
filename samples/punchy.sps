@@ -1,0 +1,1 @@
+{method="abs",{wave="sine",ampStart=1.000000,shift=0.000000,duration=1.000000,ampEnd=0.000000,pitch=0.000000,linearity=0.700000,},{wave="sine",ampStart=1.000000,shift=0.000000,duration=1.000000,ampEnd=0.000000,pitch=0.000000,linearity=0.700000,},{wave="custom1",ampStart=1.000000,shift=0.500000,duration=1.000000,pitch=0.000000,ampEnd=0.000000,linearity=1.000000,},}
