@@ -471,9 +471,10 @@ local samplerToggle = {
   "samplerPreviewPitchUp", "samplerPreviewPitchDown",
 }
 
+local sampleN = 0
 local function samplerAdd()
-  local n = #samples + 1
-  local name = "sample" .. n
+  sampleN = sampleN + 1
+  local name = "sample" .. sampleN
   samples[name] = {method = "avg", {wave = "sine", ampStart = 1, ampEnd = 0, linearity = 1, shift = 0, duration = 1,
     pitch = 0}} 
   sample = name
@@ -565,7 +566,7 @@ local function samplerGetGenerator(cycles)
     local values = {}
     for i=1, #generators do
       local amp = s[i].ampStart + (s[i].ampEnd-s[i].ampStart)*((cur/max)^s[i].linearity)
-      values[i] = generators[i](cur, max/cycles) * amp
+      values[i] = generators[i](cur, (max/cycles)+s[i].pitch) * amp
     end
     local value
     if s.method == "avg" then
@@ -585,7 +586,7 @@ local function samplerPreview(self)
   local x, y, w, h = self:xywh()
   fl.color(0xFF44FF00)
   fl.begin_points()
-  local generator = samplerGetGenerator(6)
+  local generator = samplerGetGenerator(16)
   for step=1, w do
     local value = generator(step, w)
     fl.vertex(x + layout.MARGIN + step, y + layout.MARGIN + 32 + value * -32)
@@ -725,13 +726,13 @@ local waveControls = grid {
       {
         labeledNumberField("Layer", "waveLayerIndex", waveSetParams, nil, 1) },
       {
+        label {widthOverride="remaining", text="Layer Combinator"},
+        menubutton {items=waveCombinators, widthOverride=32, text="abs", callback=waveSetParams, id="waveEditMode"} },
+      {
         labeledNumberField("Wave", "waveIndex", waveSetParams, nil, 1) },
       {
         label {widthOverride="remaining", text = "Generator"},
         menubutton {items={}, widthOverride = 64, text = "sine", callback=waveSetParams, id="waveEditMenu"} },
-      {
-        label {widthOverride="remaining", text="Combinator"},
-        menubutton {items=waveCombinators, widthOverride=32, text="abs", callback=waveSetParams, id="waveEditMode"} },
       {
         labeledNumberField("Phase", "wavePhase", waveSetParams, true, 0, 1) },
       {
@@ -741,19 +742,19 @@ local waveControls = grid {
 
 local samplerControls = grid { widthOverride = "remaining",
   { -- row 1: selection
-    sampleList {text = "sample", widthOverride = "remaining", items={}, callback=samplerSelect, id="samplerSelect"},
+    sampleList {text = "--", widthOverride = "remaining", items={}, callback=samplerSelect, id="samplerSelect"},
     upDownButtons("sampleAdd", samplerAdd, samplerRemove) },
   { -- row 2: previews (amplitude, wave)
     canvas {w = 64, h = 64, id = "samplerPreviewAmp", draw = samplerPreviewAmp},
     canvas {w = 64, h = 64, id = "samplerPreviewWave", draw = samplerPreviewWave} },
   { -- row 3+: controls
-    label {widthOverride="remaining", text="Wave"}, waveList {text = "sine", widthOverride = 64,
-      items={}, callback=samplerGetParams, id="waveSelectSampler" }, },
-  {
     label {widthOverride="remaining", text="Combinator"},
     menubutton {items = waveCombinators, widthOverride = 32, text = "avg", callback = samplerGetParams, id = "samplerMethod"} },
   {
     labeledNumberField("Layer", "samplerLayer", samplerGetParams, false, 1) },
+  {
+    label {widthOverride="remaining", text="Wave"}, waveList {text = "sine", widthOverride = 64,
+      items={}, callback=samplerGetParams, id="waveSelectSampler" }, },
   {
     labeledNumberField("Amp start", "samplerAmpStart", samplerGetParams, true, -1, 1), },
   {

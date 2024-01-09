@@ -15,9 +15,7 @@ Dependencies:
 
 `ALSA_DEVICE` is a MIDI device specifier, e.g. `20:0` or `"Digital Piano"`.
 
-On launch you should be presented with a window like this one.
-
-![Main screen](screenshots/onlaunch.png)
+See [USAGE.md](USAGE.md) for information on the GUI.
 
 ## Performance
 
