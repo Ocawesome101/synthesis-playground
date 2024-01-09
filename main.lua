@@ -37,6 +37,7 @@ local synth_thread = lanes.gen("*", function()
   local sample = ""
   local samples = {}
   local held = {[0] = {}}
+  local sustain = {[0] = false}
 
   midi.handle("SND_SEQ_EVENT_CONTROLLER", function(e)
     local pedal, pressed = e[8][5], e[8][6]
@@ -48,6 +49,8 @@ local synth_thread = lanes.gen("*", function()
         local id = loop.endLoop()
       end
       linda1:send(KEY_FROMSYNTH, {"inLoop", inLoop})
+    elseif pedal == PEDAL_SUSTAIN then
+      sustain[channel] = pressed > 63
     end
   end)
 
@@ -73,15 +76,19 @@ local synth_thread = lanes.gen("*", function()
     end
   end)
 
+  local function stopNote(pitch)
+    snd.stopLoop(pitch, channel)
+    if inLoop then
+      loop.endNote(pitch)
+    end
+  end
+
   midi.handle("SND_SEQ_EVENT_NOTEOFF", function(evt)
     local pitch = evt[8][2]
     held[channel][pitch] = false
 
-    if not sustain then
-      snd.stopLoop(pitch, channel)
-      if inLoop then
-        loop.endNote(pitch)
-      end
+    if not sustain[channel] then
+      stopNote(pitch)
     end
   end)
 
@@ -105,7 +112,7 @@ local synth_thread = lanes.gen("*", function()
         samples[sample][v[2]] = v[3]
       elseif k and v[1] == "playsample" then
         DEBUG("preview sample")
-        snd.startNote(0, 128, v[2], channel)
+        snd.startNote(0, 128, v[2], channel+1)
       elseif k and v[1] == "sampleset" then
         DEBUG("add sample set: " .. v[2])
         sample = v[2]
@@ -123,6 +130,13 @@ local synth_thread = lanes.gen("*", function()
         linda1:send(KEY_FROMSYNTH, {"sample", channel, false})
       end
     until not k
+    if not sustain[channel] then
+      for i=0, 255 do
+        if not held[channel][i] then
+          stopNote(i)
+        end
+      end
+    end
     util.sleep(10)
   end
 end)
@@ -131,16 +145,18 @@ local function generateSample(N, generators, duration, sample)
   local snd = require("synth.snd")
   local samples = duration * snd.SAMPLE_RATE
   local perCycle = {}
+  local starts = {}
   local durations = {}
   for i=1, #generators do
     perCycle[i] = math.floor(snd.SAMPLE_RATE/snd.freq(20+N+sample[i].pitch)+0.5)
+    starts[i] = sample[i].offset * samples
     durations[i] = sample[i].duration * samples
   end
   local data = {}
   for i=1, samples do
     local values = {}
     for g=1, #generators do
-      if i <= durations[g] then
+      if i >= starts[g] and i <= starts[g] + durations[g] then
         local s = sample[g]
         local amp = s.ampStart + (s.ampEnd-s.ampStart)*((i/(durations[g]))^s.linearity)
         values[#values+1] = math.floor(generators[g](i, perCycle[g]) * amp * snd.SAMPLE_MAX + 0.5)
@@ -536,6 +552,8 @@ local samplerToggle = {
   "samplerLinearityUp", "samplerLinearityDown",
   "samplerPhaseUp", "samplerPhaseDown",
   "samplerDurationUp", "samplerDurationDown",
+  "samplerOffset",
+  "samplerOffsetUp", "samplerOffsetDown",
   "samplerPitchShift",
   "samplerPitchShiftUp", "samplerPitchShiftDown",
   "samplerPreviewPitch",
@@ -550,7 +568,7 @@ local function samplerAdd(name, data)
     name = "sample" .. sampleN
   end
   samples[name] = data or {
-    method = "avg", {wave = "sine", ampStart = 1, ampEnd = 0, linearity = 1, shift = 0, duration = 1, pitch = 0}} 
+    method = "avg", {wave = "sine", ampStart = 1, ampEnd = 0, linearity = 1, shift = 0, duration = 1, pitch = 0, offset = 0}} 
   sample = name
   local inputs = layout.state.inputs
   inputs.waveSelectSampler:value("sine")
@@ -564,6 +582,7 @@ local function samplerAdd(name, data)
   inputs.samplerPhase:value(samples[name][1].shift)
   inputs.samplerPitchShift:value(samples[name][1].pitch)
   inputs.samplerDuration:value(samples[name][1].duration)
+  inputs.samplerOffset:value(samples[name][1].offset)
   layout.state.canvas.samplerPreview:redraw()
   layout.state.canvas.samplerPreviewAmp:redraw()
   layout.state.canvas.samplerPreviewWave:redraw()
@@ -703,6 +722,7 @@ samplerGetParams = function(_, shouldOverwrite, waveOverride)
   local phase = s[iwave].shift or 0
   local shift = s[iwave].pitch or 0
   local duration = s[iwave].duration or 1
+  local offset = s[iwave].offset or 0
 
   if not shouldOverwrite then
     wave = inputs.waveSelectSampler:value()
@@ -712,6 +732,7 @@ samplerGetParams = function(_, shouldOverwrite, waveOverride)
     phase = tonumber(inputs.samplerPhase:value())
     shift = tonumber(inputs.samplerPitchShift:value())
     duration = tonumber(inputs.samplerDuration:value())
+    offset = tonumber(inputs.samplerOffset:value())
   end
 
   s[iwave].ampStart = ampStart
@@ -721,6 +742,7 @@ samplerGetParams = function(_, shouldOverwrite, waveOverride)
   s[iwave].shift = phase
   s[iwave].pitch = shift
   s[iwave].duration = duration
+  s[iwave].offset = offset
   s.method = method
 
   inputs.samplerMethod:value(method)
@@ -734,6 +756,7 @@ samplerGetParams = function(_, shouldOverwrite, waveOverride)
   inputs.samplerPhase:value(phase)
   inputs.samplerPitchShift:value(shift)
   inputs.samplerDuration:value(duration)
+  inputs.samplerOffset:value(offset)
 
   layout.state.canvas.samplerPreview:redraw()
   layout.state.canvas.samplerPreviewAmp:redraw()
@@ -941,6 +964,8 @@ local samplerControls = grid { widthOverride = "remaining",
     labeledNumberField("Pitch Shift", "samplerPitchShift", samplerGetParams, false) },
   {
     labeledNumberField("Duration", "samplerDuration", samplerGetParams, true, 0.1, 1) },
+  {
+    labeledNumberField("Offset", "samplerOffset", samplerGetParams, true, 0, 1) },
 }
 
 local samplerUploadControls = grid { widthOverride = "remaining",
