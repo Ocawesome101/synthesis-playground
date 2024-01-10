@@ -61,7 +61,7 @@ local synth_thread = lanes.gen("*", function()
         return snd.startNote(pitch, velocity, s[pitch - 20], channel)
       end
     end
-    local amp = velocity/128
+    local amp = snd.scaleAmp(pitch) * velocity/128
     snd.startLoop(pitch, velocity, waves.getPCMString(waves.generatePCM(wave[channel], snd.freq(pitch), amp)), channel)
   end
 
@@ -158,7 +158,8 @@ local function generateSample(N, generators, duration, sample)
     for g=1, #generators do
       if i >= starts[g] and i <= starts[g] + durations[g] then
         local s = sample[g]
-        local amp = s.ampStart + (s.ampEnd-s.ampStart)*((i/(durations[g]))^s.linearity)
+        local amp = snd.scaleAmp(20+N+s.pitch)*
+          (s.ampStart + (s.ampEnd-s.ampStart)*((i/(durations[g]))^s.linearity))
         values[#values+1] = math.floor(generators[g](i, perCycle[g]) * amp * snd.SAMPLE_MAX + 0.5)
       else
         values[#values+1] = 0
@@ -570,25 +571,11 @@ local function samplerAdd(name, data)
   samples[name] = data or {
     method = "avg", {wave = "sine", ampStart = 1, ampEnd = 0, linearity = 1, shift = 0, duration = 1, pitch = 0, offset = 0}} 
   sample = name
-  local inputs = layout.state.inputs
-  inputs.waveSelectSampler:value("sine")
   addListEntry(sampleLists, name)
+  local inputs = layout.state.inputs
   inputs.samplerSelect:value(name)
   inputs.samplerSelect:label(name)
-  inputs.samplerAmpStart:value(samples[name][1].ampStart)
-  inputs.samplerAmpEnd:value(samples[name][1].ampEnd)
-  inputs.samplerLinearity:value(samples[name][1].linearity)
-  inputs.samplerLayer:value(1)
-  inputs.samplerPhase:value(samples[name][1].shift)
-  inputs.samplerPitchShift:value(samples[name][1].pitch)
-  inputs.samplerDuration:value(samples[name][1].duration)
-  inputs.samplerOffset:value(samples[name][1].offset)
-  layout.state.canvas.samplerPreview:redraw()
-  layout.state.canvas.samplerPreviewAmp:redraw()
-  layout.state.canvas.samplerPreviewWave:redraw()
-  for i=1, #samplerToggle do
-    layout.state.inputs[samplerToggle[i]]:activate()
-  end
+  samplerGetParams(_, true)
 end
 
 local function samplerRemove() end

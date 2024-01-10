@@ -1,0 +1,1 @@
+{method="avg",{offset=0.000000,ampStart=1.000000,duration=1.000000,shift=0.000000,linearity=0.300000,pitch=0.000000,ampEnd=0.000000,wave="sine",},{offset=0.000000,ampStart=1.000000,duration=1.000000,shift=0.000000,linearity=2.100000,pitch=-12.000000,ampEnd=0.000000,wave="sine",},}

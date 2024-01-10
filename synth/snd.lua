@@ -19,6 +19,12 @@ function mod.freq(note)
   return A4 * 2^((note-69)/12)
 end
 
+-- scale amplitude for near ish volume
+function mod.scaleAmp(freq)
+  return 1
+  --return math.min(1, 100/freq)
+end
+
 -- table of:
 -- {
 --   source = moonal_source,
